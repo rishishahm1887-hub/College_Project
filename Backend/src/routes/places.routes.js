@@ -52,7 +52,10 @@ const escapeRegex = (value) =>
 
 router.get("/", async (req, res, next) => {
   try {
-    const places = await Place.find({})
+    const places = await Place.find({}).populate(
+      "category",
+      "name slug isActive"
+    )
       .sort({
         rating: -1,
         reviews: -1,

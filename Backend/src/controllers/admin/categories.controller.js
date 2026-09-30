@@ -1,154 +1,321 @@
+import Category from "../../models/Category.js";
 import Place from "../../models/Place.js";
 
-export const getCategories = async (req, res) => {
-    try {
-        const result = await Place.aggregate([
-            {
-                $unwind: "$category",
-            },
-            {
-                $group: {
-                    _id: "$category",
-                    placeCount: {
-                        $sum: 1,
-                    },
-                },
-            },
-            {
-                $sort: {
-                    _id: 1,
-                },
-            },
-        ]);
+/*
+=====================================================
+CREATE SLUG
+=====================================================
+*/
 
-        const categories = result.map((item) => ({
-            name: item._id,
-            placeCount: item.placeCount,
-        }));
+const createSlug = (name) => {
+    return name
+        .toLowerCase()
+        .trim()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+};
+
+/*
+=====================================================
+GET CATEGORIES
+=====================================================
+*/
+
+export const getCategories = async (
+    req,
+    res
+) => {
+    try {
+        const categories =
+            await Category.find({})
+                .sort({ name: 1 })
+                .lean();
+
+        const categoriesWithCount =
+            await Promise.all(
+                categories.map(
+                    async (category) => {
+                        const placeCount =
+                            await Place.countDocuments({
+                                category:
+                                    category._id,
+                            });
+
+                        return {
+                            ...category,
+                            placeCount,
+                        };
+                    }
+                )
+            );
 
         return res.json({
             success: true,
-            categories,
+            categories:
+                categoriesWithCount,
         });
     } catch (error) {
-        console.error("Get categories error:", error);
+        console.error(
+            "Get categories error:",
+            error
+        );
 
         return res.status(500).json({
             success: false,
-            error: "Failed to load categories.",
+            error:
+                "Failed to load categories.",
         });
     }
 };
 
-export const createCategory = async (req, res) => {
+/*
+=====================================================
+CREATE CATEGORY
+=====================================================
+*/
+
+export const createCategory = async (
+    req,
+    res
+) => {
     try {
-        const name = String(req.body.name || "").trim();
+        const name = String(
+            req.body.name || ""
+        ).trim();
 
         if (!name) {
             return res.status(400).json({
                 success: false,
-                error: "Category name is required.",
+                error:
+                    "Category name is required.",
             });
         }
 
-        const existing = await Place.findOne({
-            category: {
-                $regex: `^${name}$`,
-                $options: "i",
-            },
-        });
+        const slug = createSlug(name);
+
+        if (!slug) {
+            return res.status(400).json({
+                success: false,
+                error:
+                    "Invalid category name.",
+            });
+        }
+
+        const existing =
+            await Category.findOne({
+                $or: [
+                    {
+                        name: {
+                            $regex: `^${name}$`,
+                            $options: "i",
+                        },
+                    },
+                    {
+                        slug,
+                    },
+                ],
+            });
 
         if (existing) {
             return res.status(409).json({
                 success: false,
-                error: "Category already exists.",
+                error:
+                    "Category already exists.",
             });
         }
+
+        const category =
+            await Category.create({
+                name,
+                slug,
+            });
 
         return res.status(201).json({
             success: true,
             category: {
-                name,
+                ...category.toObject(),
                 placeCount: 0,
             },
         });
     } catch (error) {
-        console.error("Create category error:", error);
+        console.error(
+            "Create category error:",
+            error
+        );
+
+        if (
+            error.code === 11000
+        ) {
+            return res.status(409).json({
+                success: false,
+                error:
+                    "Category already exists.",
+            });
+        }
 
         return res.status(500).json({
             success: false,
-            error: "Failed to create category.",
+            error:
+                "Failed to create category.",
         });
     }
 };
 
-export const renameCategory = async (req, res) => {
-    try {
-        const oldName = String(req.params.name || "").trim();
-        const newName = String(req.body.name || "").trim();
+/*
+=====================================================
+RENAME CATEGORY
+=====================================================
+*/
 
-        if (!oldName || !newName) {
+export const renameCategory = async (
+    req,
+    res
+) => {
+    try {
+        const id = req.params.id;
+
+        const newName = String(
+            req.body.name || ""
+        ).trim();
+
+        if (!id || !newName) {
             return res.status(400).json({
                 success: false,
-                error: "Both category names are required.",
+                error:
+                    "Category ID and name are required.",
             });
         }
 
+        const category =
+            await Category.findById(id);
+
+        if (!category) {
+            return res.status(404).json({
+                success: false,
+                error:
+                    "Category not found.",
+            });
+        }
+
+        const newSlug =
+            createSlug(newName);
+
+        const duplicate =
+            await Category.findOne({
+                _id: {
+                    $ne: category._id,
+                },
+                $or: [
+                    {
+                        name: {
+                            $regex: `^${newName}$`,
+                            $options: "i",
+                        },
+                    },
+                    {
+                        slug: newSlug,
+                    },
+                ],
+            });
+
+        if (duplicate) {
+            return res.status(409).json({
+                success: false,
+                error:
+                    "Another category with this name already exists.",
+            });
+        }
+
+        category.name = newName;
+        category.slug = newSlug;
+
+        await category.save();
+
+        return res.json({
+            success: true,
+            category,
+        });
+    } catch (error) {
+        console.error(
+            "Rename category error:",
+            error
+        );
+
+        return res.status(500).json({
+            success: false,
+            error:
+                "Failed to rename category.",
+        });
+    }
+};
+
+/*
+=====================================================
+DELETE CATEGORY
+=====================================================
+*/
+
+export const deleteCategory = async (
+    req,
+    res
+) => {
+    try {
+        const id = req.params.id;
+
+        if (!id) {
+            return res.status(400).json({
+                success: false,
+                error:
+                    "Category ID is required.",
+            });
+        }
+
+        const category =
+            await Category.findById(id);
+
+        if (!category) {
+            return res.status(404).json({
+                success: false,
+                error:
+                    "Category not found.",
+            });
+        }
+
+        /*
+        Remove this category from
+        every place using it.
+        */
+
         await Place.updateMany(
             {
-                category: oldName,
+                category:
+                    category._id,
             },
             {
-                $set: {
-                    "category.$": newName,
-                },
-            }
-        );
-
-        return res.json({
-            success: true,
-            message: "Category renamed successfully.",
-        });
-    } catch (error) {
-        console.error("Rename category error:", error);
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to rename category.",
-        });
-    }
-};
-
-export const deleteCategory = async (req, res) => {
-    try {
-        const name = String(req.params.name || "").trim();
-
-        if (!name) {
-            return res.status(400).json({
-                success: false,
-                error: "Category name is required.",
-            });
-        }
-
-        await Place.updateMany(
-            {},
-            {
                 $pull: {
-                    category: name,
+                    category:
+                        category._id,
                 },
             }
         );
 
+        await category.deleteOne();
+
         return res.json({
             success: true,
-            message: "Category deleted successfully.",
+            message:
+                "Category deleted successfully.",
         });
     } catch (error) {
-        console.error("Delete category error:", error);
+        console.error(
+            "Delete category error:",
+            error
+        );
 
         return res.status(500).json({
             success: false,
-            error: "Failed to delete category.",
+            error:
+                "Failed to delete category.",
         });
     }
 };

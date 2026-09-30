@@ -1,11 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   GoogleMap,
   InfoWindow,
@@ -13,21 +6,24 @@ import {
   Polyline,
   useJsApiLoader,
 } from "@react-google-maps/api";
-
+import { useParams, useSearchParams } from "react-router-dom";
 import {
-  useSearchParams,
-  useParams,
-} from "react-router-dom";
+  ArrowLeft,
+  Car,
+  Crosshair,
+  LocateFixed,
+  MapPin,
+  Navigation,
+  RefreshCw,
+  Route as RouteIcon,
+  Search,
+  Star,
+  X,
+} from "lucide-react";
 
-import placesData from "../data/places.json";
+import { getPlaces } from "../lib/api";
 
-/*
-|--------------------------------------------------------------------------
-| GOOGLE MAPS
-|--------------------------------------------------------------------------
-*/
-
-const GOOGLE_MAPS_LIBRARIES = [];
+const GOOGLE_MAPS_LIBRARIES = ["routes"];
 
 const MAP_CONTAINER_STYLE = {
   width: "100%",
@@ -39,3935 +35,1926 @@ const DEFAULT_CENTER = {
   lng: 84.3542,
 };
 
-/*
-|--------------------------------------------------------------------------
-| FREE ROUTING
-|--------------------------------------------------------------------------
-*/
+const OFF_ROUTE_DISTANCE_METERS = 150;
+const MAX_NEARBY_PLACES = 10;
+const GPS_TIMEOUT = 15000;
+const GPS_MAX_AGE = 5000;
+const GPS_ENABLE_HIGH_ACCURACY = true;
 
-const OSRM_URL =
-  "https://router.project-osrm.org";
+const CATEGORY_LIST = [
+  "All",
+  "Nature",
+  "Temple",
+  "Adventure",
+  "Culture",
+  "Restaurant",
+  "Hotel",
+  "Homestay",
+  "Viewpoint",
+];
 
-/*
-|--------------------------------------------------------------------------
-| STATIC PLACES
-|--------------------------------------------------------------------------
-|
-| Places come from places.json.
-| No Google Places API.
-| No recommendation API.
-|--------------------------------------------------------------------------
-*/
+const cleanText = (value) =>
+  String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
 
-const MAX_STATIC_PLACES = 15;
+const isValidCoordinate = (lat, lng) =>
+  Number.isFinite(Number(lat)) &&
+  Number.isFinite(Number(lng)) &&
+  Number(lat) >= -90 &&
+  Number(lat) <= 90 &&
+  Number(lng) >= -180 &&
+  Number(lng) <= 180;
 
-/*
-|--------------------------------------------------------------------------
-| RIDER CATEGORIES
-|--------------------------------------------------------------------------
-*/
+const getPlaceCoordinate = (place) => {
+  if (!place) return null;
 
-const PLACE_CATEGORIES = {
-  all: {
-    key: "all",
-    label: "All",
-    icon: "✦",
-  },
+  const directLat = Number(place.latitude ?? place.lat);
+  const directLng = Number(place.longitude ?? place.lng);
 
-  fuel: {
-    key: "fuel",
-    label: "Fuel",
-    icon: "⛽",
-  },
-
-  cafe: {
-    key: "cafe",
-    label: "Café",
-    icon: "☕",
-  },
-
-  food: {
-    key: "food",
-    label: "Food",
-    icon: "🍲",
-  },
-
-  restroom: {
-    key: "restroom",
-    label: "Restroom",
-    icon: "🚻",
-  },
-
-  medical: {
-    key: "medical",
-    label: "Medical",
-    icon: "🏥",
-  },
-
-  bank: {
-    key: "bank",
-    label: "ATM / Bank",
-    icon: "🏧",
-  },
-
-  charging: {
-    key: "charging",
-    label: "Charging",
-    icon: "🔋",
-  },
-
-  workshop: {
-    key: "workshop",
-    label: "Workshop",
-    icon: "🔧",
-  },
-
-  temple: {
-    key: "temple",
-    label: "Temple",
-    icon: "🛕",
-  },
-
-  park: {
-    key: "park",
-    label: "Park",
-    icon: "🌳",
-  },
-
-  view: {
-    key: "view",
-    label: "View",
-    icon: "🌄",
-  },
-};
-
-/*
-|--------------------------------------------------------------------------
-| CATEGORY ALIASES
-|--------------------------------------------------------------------------
-*/
-
-const CATEGORY_ALIASES = {
-  fuel: [
-    "fuel",
-    "petrol",
-    "petrol pump",
-    "gas station",
-    "gasstation",
-    "fuel station",
-    "fuelstation",
-    "pumps",
-  ],
-
-  cafe: [
-    "cafe",
-    "coffee",
-    "coffee shop",
-    "tea shop",
-    "bakery",
-  ],
-
-  food: [
-    "food",
-    "restaurant",
-    "eatery",
-    "dining",
-    "local food",
-    "food place",
-    "eat",
-  ],
-
-  restroom: [
-    "restroom",
-    "rest room",
-    "toilet",
-    "washroom",
-    "public toilet",
-    "bathroom",
-  ],
-
-  medical: [
-    "medical",
-    "hospital",
-    "clinic",
-    "pharmacy",
-    "health",
-    "medicine",
-    "medical center",
-  ],
-
-  bank: [
-    "atm",
-    "bank",
-    "cash",
-    "finance",
-    "banking",
-  ],
-
-  charging: [
-    "charging",
-    "ev charging",
-    "ev charger",
-    "electric charging",
-    "charging station",
-    "charger",
-  ],
-
-  workshop: [
-    "workshop",
-    "mechanic",
-    "motorcycle repair",
-    "motorcycle",
-    "bike repair",
-    "bike service",
-    "repair",
-    "puncture",
-    "tyre",
-    "tire",
-    "garage",
-    "service center",
-  ],
-
-  temple: [
-    "temple",
-    "gumba",
-    "monastery",
-    "shrine",
-    "mandir",
-  ],
-
-  park: [
-    "park",
-    "nature",
-    "forest",
-    "garden",
-    "green",
-    "jungle",
-  ],
-
-  view: [
-    "view",
-    "viewpoint",
-    "scenic",
-    "scenic view",
-    "lookout",
-    "sunset",
-    "lake",
-    "lakeside",
-    "riverside",
-  ],
-};
-
-/*
-|--------------------------------------------------------------------------
-| SMALL CATEGORY DISPLAY
-|--------------------------------------------------------------------------
-*/
-
-const CATEGORY_STYLE = {
-  fuel: {
-    label: "Fuel",
-    icon: "⛽",
-  },
-
-  cafe: {
-    label: "Café",
-    icon: "☕",
-  },
-
-  food: {
-    label: "Food",
-    icon: "🍲",
-  },
-
-  restroom: {
-    label: "Restroom",
-    icon: "🚻",
-  },
-
-  medical: {
-    label: "Medical",
-    icon: "🏥",
-  },
-
-  bank: {
-    label: "ATM / Bank",
-    icon: "🏧",
-  },
-
-  charging: {
-    label: "Charging",
-    icon: "🔋",
-  },
-
-  workshop: {
-    label: "Workshop",
-    icon: "🔧",
-  },
-
-  temple: {
-    label: "Temple",
-    icon: "🛕",
-  },
-
-  park: {
-    label: "Park",
-    icon: "🌳",
-  },
-
-  view: {
-    label: "View",
-    icon: "🌄",
-  },
-
-  hidden: {
-    label: "Hidden",
-    icon: "✨",
-  },
-
-  other: {
-    label: "Local",
-    icon: "📍",
-  },
-};
-
-/*
-|--------------------------------------------------------------------------
-| HELPERS
-|--------------------------------------------------------------------------
-*/
-
-function cleanText(value) {
-  return String(value || "")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function isValidCoordinate(lat, lng) {
-  return (
-    Number.isFinite(lat) &&
-    Number.isFinite(lng) &&
-    lat >= -90 &&
-    lat <= 90 &&
-    lng >= -180 &&
-    lng <= 180 &&
-    !(lat === 0 && lng === 0)
-  );
-}
-
-function getPlaceCoordinate(place) {
-  if (!place) {
-    return null;
-  }
-
-  let latitude =
-    Number(place.latitude);
-
-  let longitude =
-    Number(place.longitude);
-
-  if (
-    isValidCoordinate(
-      latitude,
-      longitude
-    )
-  ) {
+  if (isValidCoordinate(directLat, directLng)) {
     return {
-      lat: latitude,
-      lng: longitude,
+      lat: directLat,
+      lng: directLng,
     };
   }
 
   if (
     place.coordinates &&
-    isValidCoordinate(
-      Number(place.coordinates.lat),
-      Number(place.coordinates.lng)
-    )
+    typeof place.coordinates === "object" &&
+    !Array.isArray(place.coordinates)
   ) {
-    return {
-      lat:
-        Number(place.coordinates.lat),
+    const lat = Number(place.coordinates.latitude ?? place.coordinates.lat);
+    const lng = Number(place.coordinates.longitude ?? place.coordinates.lng);
 
-      lng:
-        Number(place.coordinates.lng),
-    };
+    if (isValidCoordinate(lat, lng)) {
+      return { lat, lng };
+    }
   }
 
-  const geoCoordinates =
-    place.locationPoint
-      ?.coordinates;
-
   if (
-    Array.isArray(
-      geoCoordinates
-    ) &&
-    geoCoordinates.length >= 2
+    place.locationPoint?.coordinates &&
+    Array.isArray(place.locationPoint.coordinates)
   ) {
-    longitude =
-      Number(
-        geoCoordinates[0]
-      );
+    const [lng, lat] = place.locationPoint.coordinates.map(Number);
 
-    latitude =
-      Number(
-        geoCoordinates[1]
-      );
-
-    if (
-      isValidCoordinate(
-        latitude,
-        longitude
-      )
-    ) {
+    if (isValidCoordinate(lat, lng)) {
       return {
-        lat: latitude,
-        lng: longitude,
+        lat,
+        lng,
       };
     }
   }
 
-  latitude =
-    Number(place.lat);
-
-  longitude =
-    Number(place.lng);
-
   if (
-    isValidCoordinate(
-      latitude,
-      longitude
-    )
+    place.location?.coordinates &&
+    Array.isArray(place.location.coordinates)
   ) {
-    return {
-      lat: latitude,
-      lng: longitude,
-    };
+    const [lng, lat] = place.location.coordinates.map(Number);
+
+    if (isValidCoordinate(lat, lng)) {
+      return {
+        lat,
+        lng,
+      };
+    }
   }
 
   return null;
-}
+};
 
-function getPlaceSearchText(place) {
-  const values = [
-    place?.name,
-    place?.title,
-    place?.description,
-    place?.category,
-    place?.categoryKeys,
-    place?.categories,
-    place?.hiddenPlaceType,
-    place?.location,
-    place?.formattedAddress,
-  ];
+const getPlaceKey = (place) =>
+  place?._id ||
+  place?.id ||
+  place?.slug ||
+  place?.googlePlaceId ||
+  place?.name;
 
-  return cleanText(
-    values
-      .flat(Infinity)
-      .filter(Boolean)
-      .join(" ")
-  ).toLowerCase();
-}
+const getCategoryName = (category) => {
+  if (!category) return "";
 
-/*
-|--------------------------------------------------------------------------
-| DETERMINE CATEGORY
-|--------------------------------------------------------------------------
-*/
-
-function detectPlaceCategory(place) {
-  const explicit =
-    cleanText(
-      place?.hiddenPlaceType
-    ).toLowerCase();
-
-  const searchText =
-    getPlaceSearchText(place);
-
-  /*
-   * Explicit hidden-place type first.
-   */
-
-  if (
-    explicit === "lake" ||
-    explicit === "lakeside"
-  ) {
-    return "view";
+  if (typeof category === "string") {
+    return category.trim();
   }
 
-  if (
-    explicit === "rest" ||
-    explicit === "resting"
-  ) {
-    return "restroom";
+  if (typeof category === "object") {
+    return String(
+      category.name ||
+      category.title ||
+      category.label ||
+      category.slug ||
+      ""
+    ).trim();
   }
 
-  if (
-    explicit === "cafe" ||
-    explicit === "coffee"
-  ) {
-    return "cafe";
-  }
+  return "";
+};
 
-  if (
-    explicit === "food" ||
-    explicit === "restaurant" ||
-    explicit === "local-food"
-  ) {
-    return "food";
-  }
+const getPlaceCategories = (place) => {
+  const category = place?.category;
 
-  if (
-    explicit === "hotel" ||
-    explicit === "stay" ||
-    explicit === "homestay"
-  ) {
-    return "other";
-  }
+  const values = Array.isArray(category)
+    ? category
+    : category
+      ? [category]
+      : [];
 
-  if (
-    explicit === "park" ||
-    explicit === "nature" ||
-    explicit === "forest"
-  ) {
-    return "park";
-  }
+  return values
+    .map(getCategoryName)
+    .filter(Boolean);
+};
 
-  if (
-    explicit === "temple" ||
-    explicit === "gumba"
-  ) {
-    return "temple";
-  }
+const getPlaceCategory = (place) => {
+  return getPlaceCategories(place)[0] || "Other";
+};
 
-  if (
-    explicit === "view" ||
-    explicit === "viewpoint"
-  ) {
-    return "view";
-  }
+const getCategoryIcon = (category) => {
+  const value = cleanText(category).toLowerCase();
 
-  /*
-   * General text matching.
-   */
+  if (value.includes("temple")) return "🛕";
+  if (value.includes("nature")) return "🌿";
+  if (value.includes("adventure")) return "🦋";
+  if (value.includes("culture")) return "🏛️";
+  if (value.includes("restaurant")) return "🍽️";
+  if (value.includes("hotel")) return "🏨";
+  if (value.includes("homestay")) return "🏡";
+  if (value.includes("view")) return "🌅";
 
-  const categoryKeys =
-    Object.keys(
-      CATEGORY_ALIASES
-    );
+  return "📍";
+};
 
-  for (
-    const categoryKey of categoryKeys
-  ) {
-    const aliases =
-      CATEGORY_ALIASES[
-        categoryKey
-      ];
+const haversineDistanceMeters = (a, b) => {
+  if (!a || !b) return Infinity;
 
-    const found =
-      aliases.some(
-        (alias) =>
-          searchText.includes(
-            alias
-          )
-      );
+  const R = 6371000;
 
-    if (found) {
-      return categoryKey;
-    }
-  }
-
-  return "other";
-}
-
-/*
-|--------------------------------------------------------------------------
-| CATEGORY DATA
-|--------------------------------------------------------------------------
-*/
-
-function getCategoryDisplay(
-  category,
-  place
-) {
-  if (
-    place?.isHidden === true ||
-    place?.hiddenPlace === true
-  ) {
-    if (
-      category === "other"
-    ) {
-      return CATEGORY_STYLE.hidden;
-    }
-  }
-
-  return (
-    CATEGORY_STYLE[
-      category
-    ] ||
-    CATEGORY_STYLE.other
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| DESCRIPTION
-|--------------------------------------------------------------------------
-*/
-
-function shortenDescription(
-  description
-) {
-  const text =
-    cleanText(
-      description
-    );
-
-  if (!text) {
-    return "A useful stop for your journey.";
-  }
-
-  /*
-   * Keep it concise.
-   */
-
-  const sentences =
-    text.split(
-      /(?<=[.!?])\s+/
-    );
-
-  const first =
-    sentences[0] || text;
-
-  if (
-    first.length <= 130
-  ) {
-    return first;
-  }
-
-  return `${first.slice(
-    0,
-    127
-  )}...`;
-}
-
-/*
-|--------------------------------------------------------------------------
-| DISTANCE
-|--------------------------------------------------------------------------
-*/
-
-function haversineDistanceMeters(
-  from,
-  to
-) {
-  if (!from || !to) {
-    return Infinity;
-  }
-
-  const earthRadius =
-    6371000;
-
-  const radians = (
-    value
-  ) =>
-    (value * Math.PI) /
-    180;
-
-  const lat1 =
-    radians(from.lat);
-
-  const lat2 =
-    radians(to.lat);
+  const lat1 = (Number(a.lat) * Math.PI) / 180;
+  const lat2 = (Number(b.lat) * Math.PI) / 180;
 
   const deltaLat =
-    radians(
-      to.lat - from.lat
-    );
+    ((Number(b.lat) - Number(a.lat)) * Math.PI) / 180;
 
   const deltaLng =
-    radians(
-      to.lng - from.lng
-    );
+    ((Number(b.lng) - Number(a.lng)) * Math.PI) / 180;
 
-  const a =
-    Math.sin(
-      deltaLat / 2
-    ) **
-      2 +
+  const x =
+    Math.sin(deltaLat / 2) ** 2 +
     Math.cos(lat1) *
-      Math.cos(lat2) *
-      Math.sin(
-        deltaLng / 2
-      ) **
-        2;
+    Math.cos(lat2) *
+    Math.sin(deltaLng / 2) ** 2;
 
-  const c =
-    2 *
-    Math.atan2(
-      Math.sqrt(a),
-      Math.sqrt(1 - a)
-    );
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
 
-  return (
-    earthRadius * c
-  );
-}
+  return R * c;
+};
 
-function formatDistance(
-  meters
-) {
-  if (
-    !Number.isFinite(
-      Number(meters)
-    )
-  ) {
-    return "--";
-  }
+const formatDistance = (meters) => {
+  if (!Number.isFinite(Number(meters))) return "--";
 
-  const value =
-    Number(meters);
+  const value = Number(meters);
 
   if (value < 1000) {
-    return `${Math.round(
-      value
-    )} m`;
+    return `${Math.round(value)} m`;
   }
 
-  return `${(
-    value / 1000
-  ).toFixed(1)} km`;
-}
+  return `${(value / 1000).toFixed(1)} km`;
+};
 
-function formatDuration(
-  milliseconds
-) {
-  if (
-    !Number.isFinite(
-      Number(milliseconds)
+const formatDuration = (seconds) => {
+  if (!Number.isFinite(Number(seconds))) return "--";
+
+  const totalMinutes = Math.max(
+    1,
+    Math.round(Number(seconds) / 60)
+  );
+
+  if (totalMinutes < 60) {
+    return `${totalMinutes} min`;
+  }
+
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (!minutes) {
+    return `${hours} hr`;
+  }
+
+  return `${hours} hr ${minutes} min`;
+};
+
+const getClosestPointOnSegment = (point, start, end) => {
+  const x = Number(point.lng);
+  const y = Number(point.lat);
+
+  const x1 = Number(start.lng);
+  const y1 = Number(start.lat);
+
+  const x2 = Number(end.lng);
+  const y2 = Number(end.lat);
+
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+
+  if (dx === 0 && dy === 0) {
+    return {
+      lat: y1,
+      lng: x1,
+    };
+  }
+
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      ((x - x1) * dx + (y - y1) * dy) /
+      (dx * dx + dy * dy)
     )
-  ) {
-    return "--";
-  }
-
-  const minutes =
-    Math.max(
-      0,
-      Math.round(
-        Number(
-          milliseconds
-        ) / 60000
-      )
-    );
-
-  if (minutes < 60) {
-    return `${minutes} min`;
-  }
-
-  const hours =
-    Math.floor(
-      minutes / 60
-    );
-
-  const remaining =
-    minutes % 60;
-
-  return remaining === 0
-    ? `${hours} hr`
-    : `${hours} hr ${remaining} min`;
-}
-
-/*
-|--------------------------------------------------------------------------
-| BUILD STATIC JOURNEY PLACES
-|--------------------------------------------------------------------------
-*/
-
-function buildStaticJourneyPlaces() {
-  const allPlaces =
-    Array.isArray(
-      placesData?.places
-    )
-      ? placesData.places
-      : [];
-
-  const validPlaces =
-    allPlaces.filter(
-      (place) =>
-        Boolean(
-          getPlaceCoordinate(
-            place
-          )
-        )
-    );
-
-  /*
-   * Put hidden places first,
-   * then other useful places.
-   */
-
-  const hiddenPlaces =
-    validPlaces.filter(
-      (place) =>
-        place?.isHidden === true ||
-        place?.hiddenPlace === true ||
-        Boolean(
-          place?.hiddenPlaceType
-        )
-    );
-
-  const normalPlaces =
-    validPlaces.filter(
-      (place) =>
-        !(
-          place?.isHidden === true ||
-          place?.hiddenPlace === true ||
-          Boolean(
-            place?.hiddenPlaceType
-          )
-        )
-    );
-
-  const ordered =
-    [
-      ...hiddenPlaces,
-      ...normalPlaces,
-    ];
-
-  const unique =
-    [];
-
-  const seen =
-    new Set();
-
-  for (
-    const place of ordered
-  ) {
-    const id =
-      String(
-        place?.id ??
-          place?._id ??
-          place?.placeId ??
-          `${place?.name}-${Math.random()}`
-      );
-
-    if (
-      seen.has(id)
-    ) {
-      continue;
-    }
-
-    seen.add(id);
-
-    const coordinates =
-      getPlaceCoordinate(
-        place
-      );
-
-    const category =
-      detectPlaceCategory(
-        place
-      );
-
-    const categoryData =
-      getCategoryDisplay(
-        category,
-        place
-      );
-
-    unique.push({
-      ...place,
-
-      id,
-
-      coordinates,
-
-      category,
-
-      categoryLabel:
-        categoryData.label,
-
-      categoryIcon:
-        categoryData.icon,
-
-      conciseDescription:
-        shortenDescription(
-          place?.description
-        ),
-
-      isHidden:
-        place?.isHidden ===
-          true ||
-        place?.hiddenPlace ===
-          true ||
-        Boolean(
-          place?.hiddenPlaceType
-        ),
-    });
-
-    if (
-      unique.length >=
-      MAX_STATIC_PLACES
-    ) {
-      break;
-    }
-  }
-
-  return unique;
-}
-
-const STATIC_JOURNEY_PLACES =
-  buildStaticJourneyPlaces();
-
-/*
-|--------------------------------------------------------------------------
-| ROUTE METRICS
-|--------------------------------------------------------------------------
-*/
-
-function buildRouteMetrics(
-  path
-) {
-  if (
-    !Array.isArray(path) ||
-    path.length < 2
-  ) {
-    return null;
-  }
-
-  const points =
-    path
-      .map((point) => ({
-        lat: Number(
-          point?.lat
-        ),
-
-        lng: Number(
-          point?.lng
-        ),
-      }))
-      .filter(
-        (point) =>
-          isValidCoordinate(
-            point.lat,
-            point.lng
-          )
-      );
-
-  if (
-    points.length < 2
-  ) {
-    return null;
-  }
-
-  const cumulativeMeters =
-    [0];
-
-  let totalDistanceMeters =
-    0;
-
-  for (
-    let index = 1;
-    index < points.length;
-    index += 1
-  ) {
-    totalDistanceMeters +=
-      haversineDistanceMeters(
-        points[index - 1],
-        points[index]
-      );
-
-    cumulativeMeters.push(
-      totalDistanceMeters
-    );
-  }
+  );
 
   return {
-    points,
-    cumulativeMeters,
-    totalDistanceMeters,
+    lat: y1 + t * dy,
+    lng: x1 + t * dx,
   };
-}
+};
 
-/*
-|--------------------------------------------------------------------------
-| CLOSEST POINT ON SEGMENT
-|--------------------------------------------------------------------------
-*/
-
-function getClosestPointOnSegment(
-  point,
-  start,
-  end
-) {
-  const averageLatitude =
-    (
-      start.lat +
-      end.lat +
-      point.lat
-    ) /
-    3 *
-    (Math.PI / 180);
-
-  const longitudeScale =
-    Math.cos(
-      averageLatitude
-    ) || 1;
-
-  const ax =
-    start.lng *
-    longitudeScale;
-
-  const ay =
-    start.lat;
-
-  const bx =
-    end.lng *
-    longitudeScale;
-
-  const by =
-    end.lat;
-
-  const px =
-    point.lng *
-    longitudeScale;
-
-  const py =
-    point.lat;
-
-  const dx =
-    bx - ax;
-
-  const dy =
-    by - ay;
-
-  const lengthSquared =
-    dx * dx + dy * dy;
-
-  let fraction = 0;
-
-  if (
-    lengthSquared > 0
-  ) {
-    fraction =
-      (
-        (px - ax) * dx +
-        (py - ay) * dy
-      ) /
-      lengthSquared;
-
-    fraction =
-      Math.max(
-        0,
-        Math.min(
-          1,
-          fraction
-        )
-      );
-  }
-
-  return {
-    point: {
-      lat:
-        ay +
-        (by - ay) *
-          fraction,
-
-      lng:
-        (
-          ax +
-          (bx - ax) *
-            fraction
-        ) /
-        longitudeScale,
-    },
-
-    fraction,
-  };
-}
-
-/*
-|--------------------------------------------------------------------------
-| CLOSEST ROUTE POSITION
-|--------------------------------------------------------------------------
-*/
-
-function getClosestRoutePosition(
-  point,
-  routeMetrics
-) {
-  if (
-    !point ||
-    !routeMetrics
-  ) {
-    return null;
-  }
-
-  let best = null;
-
-  for (
-    let index = 0;
-    index <
-    routeMetrics.points
-      .length -
-      1;
-    index += 1
-  ) {
-    const start =
-      routeMetrics.points[
-        index
-      ];
-
-    const end =
-      routeMetrics.points[
-        index + 1
-      ];
-
-    const projection =
-      getClosestPointOnSegment(
-        point,
-        start,
-        end
-      );
-
-    const distance =
-      haversineDistanceMeters(
-        point,
-        projection.point
-      );
-
-    const segmentDistance =
-      routeMetrics
-        .cumulativeMeters[
-          index + 1
-        ] -
-      routeMetrics
-        .cumulativeMeters[index];
-
-    const progressMeters =
-      routeMetrics
-        .cumulativeMeters[
-          index
-        ] +
-      segmentDistance *
-        projection.fraction;
-
-    if (
-      !best ||
-      distance <
-        best.distanceFromRouteMeters
-    ) {
-      best = {
-        progressMeters,
-
-        distanceFromRouteMeters:
-          distance,
-
-        point:
-          projection.point,
-      };
-    }
-  }
-
-  return best;
-}
-
-/*
-|--------------------------------------------------------------------------
-| OSRM
-|--------------------------------------------------------------------------
-*/
-
-async function getOsrmRoutes(
-  origin,
-  destination
-) {
-  const coordinates =
-    `${origin.lng},${origin.lat};${destination.lng},${destination.lat}`;
-
-  const url =
-    `${OSRM_URL}/route/v1/driving/${coordinates}` +
-    "?alternatives=2" +
-    "&overview=full" +
-    "&geometries=geojson";
-
-  const response =
-    await fetch(url);
-
-  if (
-    !response.ok
-  ) {
-    throw new Error(
-      `Routing server returned ${response.status}.`
-    );
-  }
-
-  const data =
-    await response.json();
-
-  if (
-    data?.code !== "Ok"
-  ) {
-    throw new Error(
-      data?.message ||
-        "No route found."
-    );
-  }
-
-  const routes =
-    Array.isArray(
-      data.routes
-    )
-      ? data.routes
-      : [];
-
-  return routes
-    .slice(0, 3)
-    .map(
-      (
-        item,
-        index
-      ) => {
-        const coordinates =
-          item?.geometry
-            ?.coordinates;
-
-        const path =
-          Array.isArray(
-            coordinates
-          )
-            ? coordinates
-                .map(
-                  (point) => {
-                    if (
-                      !Array.isArray(
-                        point
-                      ) ||
-                      point.length <
-                        2
-                    ) {
-                      return null;
-                    }
-
-                    const lng =
-                      Number(
-                        point[0]
-                      );
-
-                    const lat =
-                      Number(
-                        point[1]
-                      );
-
-                    if (
-                      !isValidCoordinate(
-                        lat,
-                        lng
-                      )
-                    ) {
-                      return null;
-                    }
-
-                    return {
-                      lat,
-                      lng,
-                    };
-                  }
-                )
-                .filter(Boolean)
-            : [];
-
-        return {
-          index,
-
-          path,
-
-          distanceMeters:
-            Number(
-              item?.distance
-            ) || 0,
-
-          durationMillis:
-            (
-              Number(
-                item?.duration
-              ) || 0
-            ) * 1000,
-
-          summary:
-            item?.summary ||
-            `Route ${
-              index + 1
-            }`,
-        };
-      }
-    )
-    .filter(
-      (item) =>
-        item.path.length >
-        1
-    );
-}
-
-/*
-|--------------------------------------------------------------------------
-| FALLBACK ROUTE
-|--------------------------------------------------------------------------
-*/
-
-function createFallbackRoute(
-  origin,
-  destination
-) {
-  const points = [];
-
-  const count = 70;
-
-  for (
-    let index = 0;
-    index <= count;
-    index += 1
-  ) {
-    const progress =
-      index / count;
-
-    points.push({
-      lat:
-        origin.lat +
-        (
-          destination.lat -
-          origin.lat
-        ) *
-          progress,
-
-      lng:
-        origin.lng +
-        (
-          destination.lng -
-          origin.lng
-        ) *
-          progress,
-    });
-  }
-
-  const distance =
-    haversineDistanceMeters(
-      origin,
-      destination
-    );
-
-  const duration =
-    (
-      distance / 1000 / 30
-    ) *
-    60 *
-    60000;
-
-  return [
-    {
+const getClosestRoutePosition = (position, path) => {
+  if (!position || !Array.isArray(path) || path.length < 2) {
+    return {
+      distance: Infinity,
       index: 0,
+      point: null,
+    };
+  }
 
-      path: points,
+  let closestDistance = Infinity;
+  let closestIndex = 0;
+  let closestPoint = null;
 
-      distanceMeters:
-        distance,
+  for (let i = 0; i < path.length - 1; i += 1) {
+    const point = getClosestPointOnSegment(
+      position,
+      path[i],
+      path[i + 1]
+    );
 
-      durationMillis:
-        duration,
+    const distance = haversineDistanceMeters(
+      position,
+      point
+    );
 
-      summary:
-        "Demo route",
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestIndex = i;
+      closestPoint = point;
+    }
+  }
+
+  return {
+    distance: closestDistance,
+    index: closestIndex,
+    point: closestPoint,
+  };
+};
+
+const convertGooglePath = (path) => {
+  if (!Array.isArray(path)) return [];
+
+  return path
+    .map((point) => {
+      const lat =
+        typeof point?.lat === "function"
+          ? point.lat()
+          : Number(point?.lat);
+
+      const lng =
+        typeof point?.lng === "function"
+          ? point.lng()
+          : Number(point?.lng);
+
+      return {
+        lat,
+        lng,
+      };
+    })
+    .filter((point) =>
+      isValidCoordinate(point.lat, point.lng)
+    );
+};
+
+const getRouteLabel = (route, index) => {
+  if (index === 0) return "Recommended";
+
+  if (
+    route?.routeLabels?.some(
+      (label) =>
+        String(label).toLowerCase().includes("shorter")
+    )
+  ) {
+    return "Shorter route";
+  }
+
+  return `Alternative ${index}`;
+};
+
+const getRouteMetrics = (route) => {
+  if (!route) {
+    return {
+      distance: 0,
+      duration: 0,
+    };
+  }
+
+  return {
+    distance: Number(route.distanceMeters || 0),
+    duration:
+      Number(route.durationMillis || 0) / 1000,
+  };
+};
+
+async function getGoogleRoutes(origin, destination) {
+  if (!origin || !destination) {
+    throw new Error(
+      "Origin and destination are required."
+    );
+  }
+
+  if (!window.google?.maps) {
+    throw new Error(
+      "Google Maps has not finished loading."
+    );
+  }
+
+  const { Route } =
+    await window.google.maps.importLibrary("routes");
+
+  if (!Route?.computeRoutes) {
+    throw new Error(
+      "Google Routes Library is not available."
+    );
+  }
+
+  const request = {
+    origin: {
+      lat: Number(origin.lat),
+      lng: Number(origin.lng),
     },
-  ];
+
+    destination: {
+      lat: Number(destination.lat),
+      lng: Number(destination.lng),
+    },
+
+    travelMode: "DRIVING",
+
+    routingPreference: "TRAFFIC_AWARE",
+
+    computeAlternativeRoutes: true,
+
+    language: "en",
+
+    units: google.maps.UnitSystem.METRIC,
+
+    polylineQuality: "HIGH_QUALITY",
+
+    fields: [
+      "distanceMeters",
+      "durationMillis",
+      "staticDurationMillis",
+      "path",
+      "legs",
+      "description",
+      "routeLabels",
+      "warnings",
+    ],
+  };
+
+  console.log("🛣️ Google Routes request:", request);
+
+  const response = await Route.computeRoutes(request);
+
+  const googleRoutes = response?.routes || [];
+
+  console.log(
+    "🛣️ Google Routes returned:",
+    googleRoutes.length
+  );
+
+  if (!googleRoutes.length) {
+    throw new Error(
+      "Google could not find a route between these locations."
+    );
+  }
+
+  return googleRoutes.slice(0, 3).map((googleRoute, index) => {
+    const path = convertGooglePath(
+      googleRoute.path
+    );
+
+    return {
+      id: `google-route-${index}`,
+      index,
+      path,
+      distanceMeters: Number(
+        googleRoute.distanceMeters || 0
+      ),
+      durationMillis: Number(
+        googleRoute.durationMillis ||
+        googleRoute.staticDurationMillis ||
+        0
+      ),
+      distance: Number(
+        googleRoute.distanceMeters || 0
+      ),
+      duration:
+        Number(
+          googleRoute.durationMillis ||
+          googleRoute.staticDurationMillis ||
+          0
+        ) / 1000,
+      description:
+        googleRoute.description || "",
+      routeLabels:
+        googleRoute.routeLabels || [],
+      warnings:
+        googleRoute.warnings || [],
+      legs: googleRoute.legs || [],
+      googleRoute,
+    };
+  });
 }
 
-/*
-|--------------------------------------------------------------------------
-| COMPONENT
-|--------------------------------------------------------------------------
-*/
+const Placemap = () => {
+  const { id: routeId } = useParams();
+  const [searchParams] = useSearchParams();
 
-export default function Placemap() {
-  const [
-    searchParams,
-  ] = useSearchParams();
+  const queryId = searchParams.get("id");
 
-  const {
-    id: routePlaceId,
-  } = useParams();
+  const placeId = routeId || queryId;
 
-  const placeId =
-    routePlaceId ||
-    searchParams.get("id");
+  const { isLoaded, loadError } = useJsApiLoader({
+    id: "bharatpur-google-map",
+    googleMapsApiKey:
+      import.meta.env.VITE_GOOGLE_MAPS_API_KEY,
+    libraries: GOOGLE_MAPS_LIBRARIES,
+  });
 
-  /*
-  |--------------------------------------------------------------------------
-  | GOOGLE MAP
-  |--------------------------------------------------------------------------
-  */
+  const [places, setPlaces] = useState([]);
 
-  const {
-    isLoaded,
-    loadError,
-  } =
-    useJsApiLoader({
-      id:
-        "bharatpur-ai-google-map",
-
-      googleMapsApiKey:
-        import.meta.env
-          .VITE_GOOGLE_MAPS_API_KEY,
-
-      libraries:
-        GOOGLE_MAPS_LIBRARIES,
-    });
-
-  /*
-  |--------------------------------------------------------------------------
-  | DESTINATION
-  |--------------------------------------------------------------------------
-  */
-
-  const [place, setPlace] =
+  const [destinationPlace, setDestinationPlace] =
     useState(null);
 
-  const [
-    placeLoading,
-    setPlaceLoading,
-  ] = useState(true);
+  const [navigationPlace, setNavigationPlace] =
+    useState(null);
 
-  const [
-    placeError,
-    setPlaceError,
-  ] = useState("");
+  const [position, setPosition] = useState(null);
 
-  /*
-  |--------------------------------------------------------------------------
-  | LOAD DESTINATION
-  |--------------------------------------------------------------------------
-  */
+  const [routes, setRoutes] = useState([]);
+
+  const [selectedRouteIndex, setSelectedRouteIndex] =
+    useState(0);
+
+  const [loadingPlace, setLoadingPlace] =
+    useState(true);
+
+  const [loadingPlaces, setLoadingPlaces] =
+    useState(false);
+
+  const [loadingRoute, setLoadingRoute] =
+    useState(false);
+
+  const [isNavigating, setIsNavigating] =
+    useState(false);
+
+  const [navigationError, setNavigationError] =
+    useState("");
+
+  const [offRoute, setOffRoute] =
+    useState(false);
+
+  const [gpsError, setGpsError] =
+    useState("");
+
+  const [speed, setSpeed] =
+    useState(0);
+
+  const [category, setCategory] =
+    useState("All");
+
+  const categoryOptions = useMemo(() => {
+    const names = new Map();
+
+    CATEGORY_LIST.slice(1).forEach((item) => {
+      names.set(item.toLowerCase(), item);
+    });
+
+    places.forEach((place) => {
+      getPlaceCategories(place).forEach((item) => {
+        const key = item.toLowerCase();
+        if (!names.has(key)) {
+          names.set(key, item);
+        }
+      });
+    });
+
+    return ["All", ...Array.from(names.values()).sort((a, b) => a.localeCompare(b))];
+  }, [places]);
+
+  const [search, setSearch] =
+    useState("");
+
+  const [selectedPlace, setSelectedPlace] =
+    useState(null);
+
+  const [map, setMap] =
+    useState(null);
+
+  const [showOtherPlaces, setShowOtherPlaces] =
+    useState(true);
+
+  const [recalculating, setRecalculating] =
+    useState(false);
+
+  const watchIdRef = useRef(null);
+
+  const lastPositionRef = useRef(null);
+  const lastPositionTimestampRef = useRef(null);
+
+  const lastRouteCalculationRef = useRef(0);
+
+  const navigationDestination = useMemo(
+    () =>
+      navigationPlace
+        ? getPlaceCoordinate(navigationPlace)
+        : destinationPlace
+          ? getPlaceCoordinate(destinationPlace)
+          : null,
+    [navigationPlace, destinationPlace]
+  );
+
+  const selectedRoute =
+    routes[selectedRouteIndex] || routes[0] || null;
+
+  const loadPlaces = useCallback(async () => {
+    try {
+      setLoadingPlaces(true);
+
+      const response = await getPlaces();
+
+      const loadedPlaces =
+        response?.places ||
+        response?.data ||
+        response ||
+        [];
+
+      const list = Array.isArray(loadedPlaces)
+        ? loadedPlaces
+        : [];
+
+      setPlaces(list);
+
+      return list;
+    } catch (error) {
+      console.error(
+        "LOAD PLACES ERROR:",
+        error
+      );
+
+      return [];
+    } finally {
+      setLoadingPlaces(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-
-    async function loadDestination() {
+    const loadDestination = async () => {
       if (!placeId) {
-        setPlaceError(
-          "Place ID is missing."
-        );
-
-        setPlaceLoading(
-          false
-        );
-
-        return;
-      }
-
-      const localPlaces =
-        Array.isArray(
-          placesData?.places
-        )
-          ? placesData.places
-          : [];
-
-      const localPlace =
-        localPlaces.find(
-          (item) =>
-            String(
-              item?.id
-            ) ===
-            String(
-              placeId
-            )
-        );
-
-      if (
-        localPlace
-      ) {
-        if (!cancelled) {
-          setPlace(
-            localPlace
-          );
-
-          setPlaceLoading(
-            false
-          );
-        }
-
+        setLoadingPlace(false);
         return;
       }
 
       try {
-        const apiUrl =
-          import.meta.env
-            .VITE_API_URL ||
-          "http://localhost:5000/api";
+        setLoadingPlace(true);
 
-        const response =
-          await fetch(
-            `${apiUrl}/places/${encodeURIComponent(
-              placeId
-            )}`
-          );
+        const list = await loadPlaces();
 
-        const data =
-          await response
-            .json()
-            .catch(
-              () => ({})
-            );
+        const found = list.find(
+          (item) =>
+            String(item._id) ===
+            String(placeId) ||
+            String(item.id) ===
+            String(placeId) ||
+            String(item.slug) ===
+            String(placeId)
+        );
 
-        if (
-          !response.ok
-        ) {
+        if (!found) {
           throw new Error(
-            data?.error ||
-              "Failed to load destination."
+            "Destination place was not found."
           );
         }
 
-        if (
-          !data?.place
-        ) {
-          throw new Error(
-            "Destination data is missing."
-          );
-        }
-
-        if (!cancelled) {
-          setPlace(
-            data.place
-          );
-        }
+        setDestinationPlace(found);
       } catch (error) {
         console.error(
           "DESTINATION ERROR:",
           error
         );
 
-        if (!cancelled) {
-          setPlaceError(
-            error?.message ||
-              "Unable to load destination."
-          );
-        }
+        setNavigationError(
+          error.message ||
+          "Unable to load destination."
+        );
       } finally {
-        if (!cancelled) {
-          setPlaceLoading(
-            false
-          );
-        }
+        setLoadingPlace(false);
       }
-    }
+    };
 
     loadDestination();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [placeId]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | DESTINATION COORDINATES
-  |--------------------------------------------------------------------------
-  */
-
-  const destination =
-    useMemo(
-      () =>
-        getPlaceCoordinate(
-          place
-        ),
-      [place]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | NAVIGATION STATE
-  |--------------------------------------------------------------------------
-  */
-
-  const [
-    isNavigating,
-    setIsNavigating,
-  ] = useState(false);
-
-  const [
-    position,
-    setPosition,
-  ] = useState(null);
-
-  const [
-    routes,
-    setRoutes,
-  ] = useState([]);
-
-  const [
-    route,
-    setRoute,
-  ] = useState(null);
-
-  const [
-    selectedRoute,
-    setSelectedRoute,
-  ] = useState(0);
-
-  const [
-    loadingRoute,
-    setLoadingRoute,
-  ] = useState(false);
-
-  const [
-    navigationError,
-    setNavigationError,
-  ] = useState("");
-
-  const [
-    offRoute,
-    setOffRoute,
-  ] = useState(false);
-
-  const [
-    speed,
-    setSpeed,
-  ] = useState(null);
-
-  /*
-  |--------------------------------------------------------------------------
-  | CATEGORY FILTER
-  |--------------------------------------------------------------------------
-  */
-
-  const [
-    activeCategory,
-    setActiveCategory,
-  ] = useState("all");
-
-  /*
-  |--------------------------------------------------------------------------
-  | DESCRIPTION EXPANSION
-  |--------------------------------------------------------------------------
-  */
-
-  const [
-    expandedPlaceId,
-    setExpandedPlaceId,
-  ] = useState(null);
-
-  /*
-  |--------------------------------------------------------------------------
-  | SELECTED PLACE
-  |--------------------------------------------------------------------------
-  */
-
-  const [
-    selectedPlace,
-    setSelectedPlace,
-  ] = useState(null);
-
-  /*
-  |--------------------------------------------------------------------------
-  | MAP
-  |--------------------------------------------------------------------------
-  */
-
-  const [map, setMap] =
-    useState(null);
-
-  const watchIdRef =
-    useRef(null);
-
-  const positionRef =
-    useRef(null);
-
-  const recalculatingRef =
-    useRef(false);
+  }, [placeId, loadPlaces]);
 
   useEffect(() => {
-    positionRef.current =
-      position;
-  }, [position]);
+    if (!places.length) {
+      loadPlaces();
+    }
+  }, [places.length, loadPlaces]);
 
-  /*
-  |--------------------------------------------------------------------------
-  | STATIC PLACES
-  |--------------------------------------------------------------------------
-  */
-
-  const staticPlaces =
-    useMemo(
-      () =>
-        STATIC_JOURNEY_PLACES,
-      []
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | FILTERED PLACES
-  |--------------------------------------------------------------------------
-  */
-
-  const filteredPlaces =
-    useMemo(() => {
-      if (
-        activeCategory ===
-        "all"
-      ) {
-        return staticPlaces;
-      }
-
-      return staticPlaces.filter(
-        (item) =>
-          item.category ===
-          activeCategory
+  const requestLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGpsError(
+        "Geolocation is not supported by this browser."
       );
-    }, [
-      activeCategory,
-      staticPlaces,
-    ]);
+      return;
+    }
 
-  /*
-  |--------------------------------------------------------------------------
-  | CATEGORY COUNTS
-  |--------------------------------------------------------------------------
-  */
+    navigator.geolocation.getCurrentPosition(
+      (location) => {
+        const nextPosition = {
+          lat: location.coords.latitude,
+          lng: location.coords.longitude,
+        };
 
-  const categoryCounts =
-    useMemo(() => {
-      const counts = {};
+        setPosition(nextPosition);
 
-      Object.keys(
-        PLACE_CATEGORIES
-      ).forEach(
-        (key) => {
-          counts[key] = 0;
-        }
-      );
-
-      staticPlaces.forEach(
-        (item) => {
-          if (
-            counts[
-              item.category
-            ] !== undefined
-          ) {
-            counts[
-              item.category
-            ] += 1;
-          }
-        }
-      );
-
-      counts.all =
-        staticPlaces.length;
-
-      return counts;
-    }, [staticPlaces]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | MAP CALLBACKS
-  |--------------------------------------------------------------------------
-  */
-
-  const onMapLoad =
-    useCallback(
-      (mapInstance) => {
-        setMap(
-          mapInstance
-        );
-      },
-      []
-    );
-
-  const onMapUnmount =
-    useCallback(() => {
-      setMap(null);
-    }, []);
-
-  /*
-  |--------------------------------------------------------------------------
-  | LOCATION
-  |--------------------------------------------------------------------------
-  */
-
-  const getCurrentLocation =
-    useCallback(() => {
-      return new Promise(
-        (resolve) => {
-          if (
-            !navigator.geolocation
-          ) {
-            setPosition(
-              DEFAULT_CENTER
-            );
-
-            resolve(
-              DEFAULT_CENTER
-            );
-
-            return;
-          }
-
-          navigator.geolocation.getCurrentPosition(
-            (geoPosition) => {
-              const current = {
-                lat:
-                  Number(
-                    geoPosition
-                      .coords
-                      .latitude
-                  ),
-
-                lng:
-                  Number(
-                    geoPosition
-                      .coords
-                      .longitude
-                  ),
-              };
-
-              setPosition(
-                current
-              );
-
-              const gpsSpeed =
-                Number(
-                  geoPosition
-                    .coords
-                    .speed
-                );
-
-              if (
-                Number.isFinite(
-                  gpsSpeed
-                ) &&
-                gpsSpeed >= 0
-              ) {
-                setSpeed(
-                  gpsSpeed * 3.6
-                );
-              }
-
-              resolve(
-                current
-              );
-            },
-
-            () => {
-              setPosition(
-                DEFAULT_CENTER
-              );
-
-              resolve(
-                DEFAULT_CENTER
-              );
-            },
-
-            {
-              enableHighAccuracy:
-                true,
-
-              maximumAge:
-                5000,
-
-              timeout:
-                10000,
-            }
+        if (
+          Number.isFinite(
+            location.coords.speed
+          ) &&
+          location.coords.speed >= 0
+        ) {
+          setSpeed(
+            location.coords.speed
           );
         }
-      );
-    }, []);
 
-  /*
-  |--------------------------------------------------------------------------
-  | LOCATION WATCH
-  |--------------------------------------------------------------------------
-  */
+        lastPositionRef.current = nextPosition;
+        lastPositionTimestampRef.current = location.timestamp;
 
-  const startLocationWatch =
-    useCallback(() => {
-      if (
-        !navigator.geolocation
-      ) {
-        return;
-      }
-
-      if (
-        watchIdRef.current !==
-        null
-      ) {
-        navigator.geolocation.clearWatch(
-          watchIdRef.current
+        setGpsError("");
+      },
+      (error) => {
+        console.error(
+          "GPS ERROR:",
+          error
         );
+
+        setGpsError(
+          error.message ||
+          "Unable to get your location."
+        );
+      },
+      {
+        enableHighAccuracy:
+          GPS_ENABLE_HIGH_ACCURACY,
+        timeout: GPS_TIMEOUT,
+        maximumAge: GPS_MAX_AGE,
       }
+    );
+  }, []);
 
-      watchIdRef.current =
-        navigator.geolocation.watchPosition(
-          (geoPosition) => {
-            const current = {
-              lat:
-                Number(
-                  geoPosition
-                    .coords
-                    .latitude
-                ),
+  useEffect(() => {
+    requestLocation();
+  }, [requestLocation]);
 
-              lng:
-                Number(
-                  geoPosition
-                    .coords
-                    .longitude
-                ),
-            };
+  useEffect(() => {
+    if (!navigator.geolocation) return;
 
-            setPosition(
-              current
-            );
+    watchIdRef.current =
+      navigator.geolocation.watchPosition(
+        (location) => {
+          const nextPosition = {
+            lat: location.coords.latitude,
+            lng: location.coords.longitude,
+          };
 
-            const gpsSpeed =
-              Number(
-                geoPosition
-                  .coords
-                  .speed
+          const previous =
+            lastPositionRef.current;
+          const previousTimestamp =
+            lastPositionTimestampRef.current;
+
+          if (
+            previous &&
+            Number.isFinite(previousTimestamp) &&
+            (!Number.isFinite(
+              location.coords.speed
+            ) ||
+              location.coords.speed < 0)
+          ) {
+            const distance =
+              haversineDistanceMeters(
+                previous,
+                nextPosition
+              );
+
+            const timeSeconds =
+              Math.max(
+                1,
+                (location.timestamp -
+                  previousTimestamp) /
+                1000
               );
 
             if (
               Number.isFinite(
-                gpsSpeed
-              ) &&
-              gpsSpeed >= 0
+                distance
+              )
             ) {
-              setSpeed(
-                gpsSpeed * 3.6
-              );
+              const calculatedSpeed =
+                distance /
+                Math.max(
+                  1,
+                  Math.abs(
+                    timeSeconds
+                  )
+                );
+
+              if (
+                calculatedSpeed <=
+                55
+              ) {
+                setSpeed(
+                  calculatedSpeed
+                );
+              }
             }
-          },
-
-          () => {
-            // Keep last location.
-          },
-
-          {
-            enableHighAccuracy:
-              true,
-
-            maximumAge:
-              3000,
-
-            timeout:
-              10000,
+          } else if (
+            Number.isFinite(
+              location.coords.speed
+            ) &&
+            location.coords.speed >= 0
+          ) {
+            setSpeed(
+              location.coords.speed
+            );
           }
-        );
-    }, []);
 
-  /*
-  |--------------------------------------------------------------------------
-  | STOP LOCATION WATCH
-  |--------------------------------------------------------------------------
-  */
+          setPosition(nextPosition);
 
-  const stopLocationWatch =
-    useCallback(() => {
+          lastPositionRef.current = nextPosition;
+          lastPositionTimestampRef.current = location.timestamp;
+
+          setGpsError("");
+        },
+        (error) => {
+          console.error(
+            "GPS WATCH ERROR:",
+            error
+          );
+
+          setGpsError(
+            error.message ||
+            "Unable to track your location."
+          );
+        },
+        {
+          enableHighAccuracy:
+            GPS_ENABLE_HIGH_ACCURACY,
+          timeout: GPS_TIMEOUT,
+          maximumAge: GPS_MAX_AGE,
+        }
+      );
+
+    return () => {
       if (
-        watchIdRef.current !==
-          null &&
-        navigator.geolocation
+        watchIdRef.current !== null
       ) {
         navigator.geolocation.clearWatch(
           watchIdRef.current
         );
-
-        watchIdRef.current =
-          null;
       }
-    }, []);
+    };
+  }, []);
 
-  /*
-  |--------------------------------------------------------------------------
-  | CALCULATE ROUTE
-  |--------------------------------------------------------------------------
-  */
+  const calculateRoute = useCallback(
+    async (
+      origin = position,
+      destination = navigationDestination
+    ) => {
+      if (!origin || !destination) {
+        return;
+      }
 
-  const calculateRoute =
-    useCallback(
-      async (
-        origin,
-        routeIndex = 0
-      ) => {
-        if (
-          !origin ||
-          !destination
-        ) {
-          throw new Error(
-            "Current location or destination coordinates are missing."
-          );
-        }
-
-        setLoadingRoute(
-          true
-        );
-
+      try {
+        setLoadingRoute(true);
         setNavigationError("");
+        setOffRoute(false);
 
-        try {
-          let availableRoutes =
-            [];
+        const now = Date.now();
 
-          try {
-            availableRoutes =
-              await getOsrmRoutes(
-                origin,
-                destination
-              );
-          } catch (
-            error
-          ) {
-            console.warn(
-              "OSRM unavailable. Using demo route.",
-              error
-            );
-
-            availableRoutes =
-              createFallbackRoute(
-                origin,
-                destination
-              );
-          }
-
-          if (
-            availableRoutes.length ===
-            0
-          ) {
-            availableRoutes =
-              createFallbackRoute(
-                origin,
-                destination
-              );
-          }
-
-          const safeIndex =
-            Math.max(
-              0,
-              Math.min(
-                routeIndex,
-                availableRoutes.length -
-                  1
-              )
-            );
-
-          setRoutes(
-            availableRoutes
-          );
-
-          setSelectedRoute(
-            safeIndex
-          );
-
-          setRoute(
-            availableRoutes[
-              safeIndex
-            ]
-          );
-
-          return availableRoutes;
-        } catch (error) {
-          console.error(
-            "ROUTE ERROR:",
-            error
-          );
-
-          setNavigationError(
-            error?.message ||
-              "Unable to calculate route."
-          );
-
-          throw error;
-        } finally {
-          setLoadingRoute(
-            false
-          );
-        }
-      },
-      [destination]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | START NAVIGATION
-  |--------------------------------------------------------------------------
-  */
-
-  const startNavigation =
-    useCallback(
-      async () => {
         if (
-          !destination
+          now -
+          lastRouteCalculationRef.current <
+          1000
         ) {
-          setNavigationError(
-            "This destination does not have valid coordinates."
-          );
-
           return;
         }
 
-        try {
-          setNavigationError("");
+        lastRouteCalculationRef.current =
+          now;
 
-          const current =
-            await getCurrentLocation();
-
-          await calculateRoute(
-            current,
-            0
+        const newRoutes =
+          await getGoogleRoutes(
+            origin,
+            destination
           );
 
-          setIsNavigating(
-            true
-          );
+        setRoutes(newRoutes);
 
-          setExpandedPlaceId(
-            null
-          );
+        setSelectedRouteIndex(0);
 
-          startLocationWatch();
-        } catch (error) {
-          console.error(
-            "START NAVIGATION ERROR:",
-            error
-          );
+        console.log(
+          "✅ Routes loaded:",
+          newRoutes
+        );
+      } catch (error) {
+        console.error(
+          "ROUTE ERROR:",
+          error
+        );
 
-          setNavigationError(
-            error?.message ||
-              "Unable to start navigation."
-          );
-        }
-      },
-      [
-        destination,
-        getCurrentLocation,
-        calculateRoute,
-        startLocationWatch,
-      ]
-    );
+        setNavigationError(
+          error?.message ||
+          "Unable to calculate route."
+        );
+      } finally {
+        setLoadingRoute(false);
+      }
+    },
+    [position, navigationDestination]
+  );
 
-  /*
-  |--------------------------------------------------------------------------
-  | STOP NAVIGATION
-  |--------------------------------------------------------------------------
-  */
+  const startNavigation = useCallback(
+    async (place = destinationPlace) => {
+      const destination =
+        getPlaceCoordinate(place);
 
-  const stopNavigation =
-    useCallback(() => {
-      stopLocationWatch();
+      if (!destination) {
+        setNavigationError(
+          "This place does not have valid coordinates."
+        );
+        return;
+      }
 
-      setIsNavigating(
-        false
-      );
+      if (!position) {
+        requestLocation();
 
-      setRoutes([]);
+        setNavigationError(
+          "Waiting for your current location..."
+        );
 
-      setRoute(null);
+        return;
+      }
 
-      setSelectedRoute(
-        0
-      );
-
-      setSpeed(null);
-
+      setNavigationPlace(place);
+      setIsNavigating(true);
+      setNavigationError("");
       setOffRoute(false);
 
-      setNavigationError("");
-
-      setSelectedPlace(
-        null
-      );
-
-      setExpandedPlaceId(
-        null
-      );
-
-      recalculatingRef.current =
-        false;
-    }, [
-      stopLocationWatch,
-    ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | CLEANUP
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
-    return () => {
-      stopLocationWatch();
-    };
-  }, [
-    stopLocationWatch,
-  ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | ROUTE METRICS
-  |--------------------------------------------------------------------------
-  */
-
-  const routeMetrics =
-    useMemo(
-      () =>
-        buildRouteMetrics(
-          route?.path
-        ),
-      [route?.path]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | CURRENT ROUTE POSITION
-  |--------------------------------------------------------------------------
-  */
-
-  const currentRoutePosition =
-    useMemo(() => {
-      if (
-        !position ||
-        !routeMetrics
-      ) {
-        return null;
-      }
-
-      return getClosestRoutePosition(
+      await calculateRoute(
         position,
-        routeMetrics
-      );
-    }, [
-      position,
-      routeMetrics,
-    ]);
-
-  const currentProgressMeters =
-    currentRoutePosition
-      ?.progressMeters || 0;
-
-  /*
-  |--------------------------------------------------------------------------
-  | PROGRESS
-  |--------------------------------------------------------------------------
-  */
-
-  const currentProgressPercent =
-    useMemo(() => {
-      if (
-        !routeMetrics ||
-        routeMetrics
-          .totalDistanceMeters <=
-          0
-      ) {
-        return 0;
-      }
-
-      return Math.min(
-        100,
-        Math.max(
-          0,
-          (
-            currentProgressMeters /
-            routeMetrics
-              .totalDistanceMeters
-          ) *
-            100
-        )
-      );
-    }, [
-      routeMetrics,
-      currentProgressMeters,
-    ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | REMAINING DISTANCE
-  |--------------------------------------------------------------------------
-  */
-
-  const distanceToDestination =
-    useMemo(() => {
-      if (
-        routeMetrics
-      ) {
-        return Math.max(
-          0,
-          routeMetrics
-            .totalDistanceMeters -
-            currentProgressMeters
-        );
-      }
-
-      if (
-        position &&
         destination
-      ) {
-        return haversineDistanceMeters(
-          position,
-          destination
-        );
-      }
-
-      return null;
-    }, [
-      routeMetrics,
-      currentProgressMeters,
-      position,
-      destination,
-    ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | ETA
-  |--------------------------------------------------------------------------
-  */
-
-  const eta =
-    useMemo(() => {
-      if (
-        !route ||
-        route.distanceMeters <=
-          0 ||
-        route.durationMillis <=
-          0 ||
-        !Number.isFinite(
-          distanceToDestination
-        )
-      ) {
-        return null;
-      }
-
-      const ratio =
-        Math.min(
-          1,
-          Math.max(
-            0,
-            distanceToDestination /
-              route.distanceMeters
-          )
-        );
-
-      return Math.max(
-        1,
-        Math.round(
-          (
-            route.durationMillis /
-            60000
-          ) *
-            ratio
-        )
       );
-    }, [
-      route,
-      distanceToDestination,
-    ]);
+    },
+    [
+      destinationPlace,
+      position,
+      requestLocation,
+      calculateRoute,
+    ]
+  );
 
-  /*
-  |--------------------------------------------------------------------------
-  | OFF ROUTE
-  |--------------------------------------------------------------------------
-  */
+  const startPlaceNavigation = async (place) => {
+    if (!place) return;
+
+    setSelectedPlace(null);
+
+    await startNavigation(place);
+  };
+
+  const stopNavigation = () => {
+    setIsNavigating(false);
+
+    setNavigationPlace(null);
+
+    setRoutes([]);
+
+    setSelectedRouteIndex(0);
+
+    setOffRoute(false);
+
+    setNavigationError("");
+  };
+
+  const recalculateRoute = async () => {
+    if (!position || !navigationDestination) {
+      return;
+    }
+
+    try {
+      setRecalculating(true);
+
+      await calculateRoute(
+        position,
+        navigationDestination
+      );
+    } finally {
+      setRecalculating(false);
+    }
+  };
 
   useEffect(() => {
     if (
       !isNavigating ||
-      !routeMetrics ||
-      !position
+      !position ||
+      !selectedRoute?.path?.length
     ) {
-      setOffRoute(false);
-
       return;
     }
 
     const closest =
       getClosestRoutePosition(
         position,
-        routeMetrics
+        selectedRoute.path
       );
 
-    if (!closest) {
-      setOffRoute(false);
+    const isOffRoute =
+      closest.distance >
+      OFF_ROUTE_DISTANCE_METERS;
 
-      return;
-    }
-
-    setOffRoute(
-      closest.distanceFromRouteMeters >
-        150
-    );
+    setOffRoute(isOffRoute);
   }, [
-    isNavigating,
-    routeMetrics,
     position,
+    selectedRoute,
+    isNavigating,
   ]);
-
-  /*
-  |--------------------------------------------------------------------------
-  | AUTO RECALCULATE
-  |--------------------------------------------------------------------------
-  */
 
   useEffect(() => {
     if (
       !isNavigating ||
       !offRoute ||
       !position ||
-      recalculatingRef.current
+      !navigationDestination
     ) {
       return;
     }
 
-    recalculatingRef.current =
-      true;
-
-    const timeout =
-      window.setTimeout(
-        async () => {
-          try {
-            await calculateRoute(
-              position,
-              selectedRoute
-            );
-          } catch {
-            // Existing error UI handles it.
-          } finally {
-            recalculatingRef.current =
-              false;
-          }
-        },
-        2000
+    const timer = setTimeout(() => {
+      calculateRoute(
+        position,
+        navigationDestination
       );
+    }, 1500);
 
-    return () =>
-      window.clearTimeout(
-        timeout
-      );
+    return () => clearTimeout(timer);
   }, [
-    isNavigating,
     offRoute,
+    isNavigating,
     position,
-    selectedRoute,
+    navigationDestination,
     calculateRoute,
   ]);
 
-  /*
-  |--------------------------------------------------------------------------
-  | SELECT ROUTE
-  |--------------------------------------------------------------------------
-  */
-
-  const selectRoute =
-    useCallback(
-      (index) => {
-        const nextRoute =
-          routes?.[index];
-
-        if (!nextRoute) {
-          return;
-        }
-
-        setSelectedRoute(
-          index
-        );
-
-        setRoute(
-          nextRoute
-        );
-
-        setOffRoute(false);
-
-        if (
-          map &&
-          nextRoute.path
-            ?.length > 1 &&
-          window.google?.maps
-        ) {
-          const bounds =
-            new window.google.maps.LatLngBounds();
-
-          nextRoute.path.forEach(
-            (point) => {
-              bounds.extend({
-                lat:
-                  point.lat,
-
-                lng:
-                  point.lng,
-              });
-            }
-          );
-
-          map.fitBounds(
-            bounds,
-            80
-          );
-        }
-      },
-      [routes, map]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | RECALCULATE
-  |--------------------------------------------------------------------------
-  */
-
-  const recalculateRoute =
-    useCallback(
-      async () => {
-        try {
-          const origin =
-            positionRef.current ||
-            (await getCurrentLocation());
-
-          await calculateRoute(
-            origin,
-            selectedRoute
-          );
-        } catch (error) {
-          console.error(
-            "RECALCULATE ERROR:",
-            error
-          );
-        }
-      },
-      [
-        calculateRoute,
-        getCurrentLocation,
-        selectedRoute,
-      ]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | HIDDEN PLACE COORDINATES
-  |--------------------------------------------------------------------------
-  */
-
-  const getStaticPlaceCoordinates =
-    useCallback(
-      (item) => {
-        return (
-          item?.coordinates ||
-          getPlaceCoordinate(
-            item
-          )
-        );
-      },
-      []
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | VIEW PLACE
-  |--------------------------------------------------------------------------
-  */
-
-  const showPlaceOnMap =
-    useCallback(
-      (item) => {
-        const coordinates =
-          getStaticPlaceCoordinates(
-            item
-          );
-
-        if (
-          !coordinates
-        ) {
-          return;
-        }
-
-        setSelectedPlace({
-          ...item,
-          coordinates,
-        });
-
-        if (map) {
-          map.panTo(
-            coordinates
-          );
-
-          map.setZoom(15);
-        }
-      },
-      [
-        getStaticPlaceCoordinates,
-        map,
-      ]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | DIRECTIONS
-  |--------------------------------------------------------------------------
-  */
-
-  const openDirections =
-    useCallback(
-      (item) => {
-        const coordinates =
-          getStaticPlaceCoordinates(
-            item
-          );
-
-        if (
-          !coordinates
-        ) {
-          return;
-        }
-
-        const url =
-          `https://www.google.com/maps/dir/?api=1&destination=${coordinates.lat},${coordinates.lng}`;
-
-        window.open(
-          url,
-          "_blank",
-          "noopener,noreferrer"
-        );
-      },
-      [
-        getStaticPlaceCoordinates,
-      ]
-    );
-
-  /*
-  |--------------------------------------------------------------------------
-  | MAP CENTER
-  |--------------------------------------------------------------------------
-  */
-
-  const mapCenter =
-    position ||
-    destination ||
-    DEFAULT_CENTER;
-
-  /*
-  |--------------------------------------------------------------------------
-  | FIT ROUTE
-  |--------------------------------------------------------------------------
-  */
-
-  useEffect(() => {
+  const routeProgress = useMemo(() => {
     if (
-      !map ||
-      !route?.path ||
-      route.path.length < 2 ||
-      !window.google?.maps
+      !position ||
+      !selectedRoute?.path?.length
     ) {
+      return 0;
+    }
+
+    const closest =
+      getClosestRoutePosition(
+        position,
+        selectedRoute.path
+      );
+
+    if (
+      closest.index < 0 ||
+      selectedRoute.path.length <= 1
+    ) {
+      return 0;
+    }
+
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        (closest.index /
+          (selectedRoute.path.length -
+            1)) *
+        100
+      )
+    );
+  }, [position, selectedRoute]);
+
+  const currentRouteMetrics =
+    useMemo(
+      () =>
+        getRouteMetrics(
+          selectedRoute
+        ),
+      [selectedRoute]
+    );
+
+  const destinationDistance = useMemo(() => {
+    if (!position || !navigationDestination) {
+      return 0;
+    }
+
+    return haversineDistanceMeters(
+      position,
+      navigationDestination
+    );
+  }, [
+    position,
+    navigationDestination,
+  ]);
+
+  const nearbyPlaces = useMemo(() => {
+    const validPlaces = places.filter(
+      (place) => place && typeof place === "object"
+    );
+
+    const filtered = validPlaces
+      .filter(
+        (place) =>
+          getPlaceKey(place) !==
+          getPlaceKey(destinationPlace)
+      )
+      .filter((place) => {
+        if (category === "All") return true;
+
+        return getPlaceCategories(place).some(
+          (item) =>
+            cleanText(item)
+              .toLowerCase()
+              .includes(
+                cleanText(category).toLowerCase()
+              )
+        );
+      })
+      .filter((place) => {
+        if (!search.trim()) return true;
+
+        const text = [
+          place.name,
+          place.location,
+          place.formattedAddress,
+          place.description,
+          ...getPlaceCategories(place),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+
+        return text.includes(
+          search.toLowerCase()
+        );
+      });
+
+    if (!position) {
+      return filtered
+        .slice(0, MAX_NEARBY_PLACES)
+        .map((place) => ({
+          place,
+          distance: 0,
+        }));
+    }
+
+    return filtered
+      .map((place) => {
+        const coordinate =
+          getPlaceCoordinate(place);
+
+        if (!coordinate) return null;
+
+        return {
+          place,
+          distance:
+            haversineDistanceMeters(
+              position,
+              coordinate
+            ),
+        };
+      })
+      .filter(Boolean)
+      .sort(
+        (a, b) =>
+          a.distance - b.distance
+      )
+      .slice(0, MAX_NEARBY_PLACES);
+  }, [
+    places,
+    position,
+    category,
+    search,
+    destinationPlace,
+  ]);
+
+  const center = useMemo(() => {
+    if (position) return position;
+
+    return (
+      getPlaceCoordinate(
+        destinationPlace
+      ) || DEFAULT_CENTER
+    );
+  }, [position, destinationPlace]);
+
+  const handleMapLoad = (mapInstance) => {
+    setMap(mapInstance);
+  };
+
+  const centerOnUser = () => {
+    if (!position) {
+      requestLocation();
       return;
     }
 
-    const bounds =
-      new window.google.maps.LatLngBounds();
+    map?.panTo(position);
+    map?.setZoom(17);
+  };
 
-    route.path.forEach(
-      (point) => {
-        bounds.extend({
-          lat:
-            point.lat,
+  const centerOnDestination = () => {
+    const coordinate =
+      getPlaceCoordinate(
+        navigationPlace ||
+        destinationPlace
+      );
 
-          lng:
-            point.lng,
-        });
-      }
-    );
+    if (!coordinate) return;
 
-    map.fitBounds(
-      bounds,
-      80
-    );
-  }, [
-    map,
-    route,
-  ]);
+    map?.panTo(coordinate);
+    map?.setZoom(16);
+  };
 
-  /*
-  |--------------------------------------------------------------------------
-  | LOADING
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    placeLoading
-  ) {
+  if (loadError) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-slate-100">
-        <div className="rounded-2xl bg-white px-6 py-5 text-sm font-semibold text-slate-700 shadow">
-          Loading destination...
-        </div>
-      </div>
-    );
-  }
+      <div className="flex min-h-screen items-center justify-center bg-slate-100 p-6">
+        <div className="max-w-lg rounded-2xl bg-white p-8 text-center shadow-xl">
+          <MapPin
+            className="mx-auto mb-4 text-red-500"
+            size={42}
+          />
 
-  /*
-  |--------------------------------------------------------------------------
-  | GOOGLE MAP ERROR
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    loadError
-  ) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-red-50 p-6">
-        <div className="max-w-md rounded-2xl bg-white p-6 shadow-xl">
-
-          <h2 className="text-lg font-bold text-red-600">
+          <h2 className="text-xl font-bold text-slate-900">
             Google Maps failed to load
           </h2>
 
-          <p className="mt-2 text-sm leading-6 text-slate-600">
-            Check your
-            VITE_GOOGLE_MAPS_API_KEY.
-          </p>
-
-        </div>
-      </div>
-    );
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | MAP LOADING
-  |--------------------------------------------------------------------------
-  */
-
-  if (!isLoaded) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-slate-100">
-
-        <div className="rounded-2xl bg-white px-6 py-5 text-center shadow">
-
-          <div className="mx-auto h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
-
-          <p className="mt-3 text-sm font-semibold text-slate-700">
-            Loading map...
-          </p>
-
-        </div>
-
-      </div>
-    );
-  }
-
-  /*
-  |--------------------------------------------------------------------------
-  | DESTINATION ERROR
-  |--------------------------------------------------------------------------
-  */
-
-  if (
-    placeError
-  ) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-red-50 p-6">
-        <div className="max-w-md rounded-2xl bg-white p-6 shadow-xl">
-
-          <h2 className="text-lg font-bold text-red-600">
-            Unable to load destination
-          </h2>
-
           <p className="mt-2 text-sm text-slate-600">
-            {placeError}
+            Check your Google Maps API key,
+            Maps JavaScript API and Routes API.
           </p>
-
         </div>
       </div>
     );
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | INVALID DESTINATION
-  |--------------------------------------------------------------------------
-  */
 
   if (
-    !destination
+    !isLoaded ||
+    loadingPlace
   ) {
     return (
-      <div className="flex h-full w-full items-center justify-center bg-red-50 p-6">
+      <div className="flex min-h-screen items-center justify-center bg-slate-100">
+        <div className="text-center">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-slate-200 border-t-blue-600" />
 
-        <div className="rounded-2xl bg-white p-6 shadow-xl">
-
-          <h2 className="font-bold text-red-600">
-            Invalid destination
-          </h2>
-
-          <p className="mt-2 text-sm text-slate-500">
-            Valid latitude and longitude
-            are required for navigation.
+          <p className="text-sm font-medium text-slate-600">
+            Loading Bharatpur map...
           </p>
-
         </div>
-
       </div>
     );
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | UI
-  |--------------------------------------------------------------------------
-  */
 
   return (
-    <>
-      <style>
-        {`
-          @keyframes cardEnter {
-            from {
-              opacity: 0;
-              transform: translateY(8px);
-            }
-
-            to {
-              opacity: 1;
-              transform: translateY(0);
-            }
-          }
-
-          @keyframes softPulse {
-            0%, 100% {
-              transform: scale(1);
-              opacity: 1;
-            }
-
-            50% {
-              transform: scale(1.08);
-              opacity: 0.8;
-            }
-          }
-
-          @keyframes markerPulse {
-            0%, 100% {
-              box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.28);
-            }
-
-            50% {
-              box-shadow: 0 0 0 10px rgba(37, 99, 235, 0);
-            }
-          }
-
-          .journey-card {
-            animation: cardEnter 0.3s ease-out both;
-          }
-
-          .route-location-dot {
-            animation: markerPulse 2s infinite;
-          }
-
-          .category-icon-pulse {
-            animation: softPulse 2.5s ease-in-out infinite;
-          }
-        `}
-      </style>
-
-      <div className="flex h-[calc(100vh-72px)] w-full flex-col overflow-hidden bg-slate-50 lg:flex-row">
-
-        {/* ==============================================================
-            LEFT PANEL
-            ============================================================== */}
-
-        <aside className="flex h-[62%] w-full shrink-0 flex-col border-b border-slate-200 bg-white lg:h-full lg:w-[430px] lg:border-b-0 lg:border-r">
-
-          {/* ============================================================
-              HEADER
-              ============================================================ */}
-
-          <div className="shrink-0 border-b border-slate-200 bg-white px-4 pb-3.5 pt-4">
-
-            <div className="flex items-center justify-between gap-3">
-
-              <div className="min-w-0">
-
-                <div className="flex items-center gap-2">
-
-                  <span className="category-icon-pulse text-sm">
-                    🏍️
-                  </span>
-
-                  <p className="text-[10px] font-black uppercase tracking-[0.16em] text-blue-600">
-                    Discover Bharatpur
-                  </p>
-
-                </div>
-
-                <h1 className="mt-1 text-xl font-extrabold tracking-tight text-slate-900">
-                  Rider Stops
-                </h1>
-
-                <p className="mt-0.5 text-[10px] text-slate-500">
-                  Fuel, food, service and places
-                  worth a stop.
-                </p>
-
-              </div>
-
-              {isNavigating && (
-                <span className="shrink-0 rounded-full bg-green-100 px-2.5 py-1 text-[9px] font-black text-green-700">
-                  ● LIVE
-                </span>
+    <div className="relative h-screen w-full overflow-hidden bg-slate-100">
+      <GoogleMap
+        mapContainerStyle={
+          MAP_CONTAINER_STYLE
+        }
+        center={center}
+        zoom={14}
+        onLoad={handleMapLoad}
+        options={{
+          streetViewControl: false,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          zoomControl: true,
+          clickableIcons: true,
+        }}
+      >
+        {destinationPlace &&
+          getPlaceCoordinate(
+            destinationPlace
+          ) && (
+            <Marker
+              position={getPlaceCoordinate(
+                destinationPlace
               )}
+              title={
+                destinationPlace.name
+              }
+            />
+          )}
 
-            </div>
+        {navigationPlace &&
+          navigationPlace !==
+          destinationPlace &&
+          getPlaceCoordinate(
+            navigationPlace
+          ) && (
+            <Marker
+              position={getPlaceCoordinate(
+                navigationPlace
+              )}
+              title={
+                navigationPlace.name
+              }
+            />
+          )}
 
-            {/* Destination */}
+        {position && (
+          <Marker
+            position={position}
+            title="Your location"
+            icon={{
+              path:
+                window.google
+                  .maps
+                  .SymbolPath
+                  .CIRCLE,
+              scale: 8,
+              fillColor:
+                "#2563eb",
+              fillOpacity: 1,
+              strokeColor:
+                "#ffffff",
+              strokeWeight: 3,
+            }}
+          />
+        )}
 
-            <div className="mt-3 flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2.5">
+        {routes.map(
+          (item, index) => (
+            <Polyline
+              key={
+                item.id ||
+                index
+              }
+              path={
+                item.path
+              }
+              options={{
+                strokeColor:
+                  index ===
+                    selectedRouteIndex
+                    ? "#2563eb"
+                    : "#94a3b8",
+                strokeOpacity:
+                  index ===
+                    selectedRouteIndex
+                    ? 0.95
+                    : 0.5,
+                strokeWeight:
+                  index ===
+                    selectedRouteIndex
+                    ? 6
+                    : 4,
+                zIndex:
+                  index ===
+                    selectedRouteIndex
+                    ? 10
+                    : 5,
+              }}
+            />
+          )
+        )}
 
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-100 text-sm">
-                ⚑
-              </div>
-
-              <div className="min-w-0 flex-1">
-
-                <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
-                  Destination
-                </p>
-
-                <p className="truncate text-[12px] font-extrabold text-slate-900">
+        {selectedPlace &&
+          getPlaceCoordinate(
+            selectedPlace
+          ) && (
+            <InfoWindow
+              position={getPlaceCoordinate(
+                selectedPlace
+              )}
+              onCloseClick={() =>
+                setSelectedPlace(
+                  null
+                )
+              }
+            >
+              <div className="min-w-52 p-1">
+                <h3 className="font-bold text-slate-900">
                   {
-                    place?.name ||
-                    "Destination"
+                    selectedPlace.name
+                  }
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-500">
+                  {
+                    selectedPlace.location ||
+                    selectedPlace.formattedAddress
                   }
                 </p>
-
-              </div>
-
-              {isNavigating && (
-                <div className="shrink-0 text-right">
-
-                  <p className="text-[8px] font-bold uppercase tracking-wide text-slate-400">
-                    Left
-                  </p>
-
-                  <p className="text-[11px] font-black text-blue-600">
-                    {
-                      formatDistance(
-                        distanceToDestination
-                      )
-                    }
-                  </p>
-
-                </div>
-              )}
-
-            </div>
-
-            {/* =========================================================
-                RIDER CATEGORY FILTER
-                ========================================================= */}
-
-            <div className="mt-3">
-
-              <div className="mb-1.5 flex items-center justify-between">
-
-                <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">
-                  Quick categories
-                </p>
-
-                <p className="text-[8px] text-slate-400">
-                  {staticPlaces.length} stops
-                </p>
-
-              </div>
-
-              <div className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-
-                {Object.values(
-                  PLACE_CATEGORIES
-                ).map(
-                  (category) => {
-
-                    const count =
-                      categoryCounts[
-                        category.key
-                      ] || 0;
-
-                    const active =
-                      activeCategory ===
-                      category.key;
-
-                    return (
-                      <button
-                        key={
-                          category.key
-                        }
-                        type="button"
-                        onClick={() =>
-                          setActiveCategory(
-                            category.key
-                          )
-                        }
-                        className={`flex shrink-0 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[9px] font-bold transition-all duration-200 ${
-                          active
-                            ? "border-blue-600 bg-blue-600 text-white shadow-sm"
-                            : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:bg-blue-50"
-                        }`}
-                      >
-
-                        <span>
-                          {
-                            category.icon
-                          }
-                        </span>
-
-                        <span>
-                          {
-                            category.label
-                          }
-                        </span>
-
-                        {count > 0 && (
-                          <span
-                            className={`rounded-full px-1.5 py-0.5 text-[7px] ${
-                              active
-                                ? "bg-white/20 text-white"
-                                : "bg-slate-100 text-slate-500"
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        )}
-
-                      </button>
-                    );
-                  }
-                )}
-
-              </div>
-
-            </div>
-
-            {/* Route stats */}
-
-            <div className="mt-2.5 grid grid-cols-3 gap-1.5">
-
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-
-                <p className="text-[7px] font-bold uppercase tracking-wide text-slate-400">
-                  Route
-                </p>
-
-                <p className="mt-0.5 text-[10px] font-black text-slate-800">
-                  {isNavigating
-                    ? `#${selectedRoute + 1}`
-                    : "--"}
-                </p>
-
-              </div>
-
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-
-                <p className="text-[7px] font-bold uppercase tracking-wide text-slate-400">
-                  Progress
-                </p>
-
-                <p className="mt-0.5 text-[10px] font-black text-slate-800">
-                  {isNavigating
-                    ? `${Math.round(
-                        currentProgressPercent
-                      )}%`
-                    : "--"}
-                </p>
-
-              </div>
-
-              <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-
-                <p className="text-[7px] font-bold uppercase tracking-wide text-slate-400">
-                  ETA
-                </p>
-
-                <p className="mt-0.5 text-[10px] font-black text-slate-800">
-                  {isNavigating &&
-                  eta !== null
-                    ? `${eta}m`
-                    : "--"}
-                </p>
-
-              </div>
-
-            </div>
-
-          </div>
-
-          {/* ============================================================
-              TIMELINE
-              ============================================================ */}
-
-          <div className="relative min-h-0 flex-1 overflow-y-auto bg-slate-50 px-3.5 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-
-            {!isNavigating ? (
-
-              <div className="flex h-full items-center justify-center">
-
-                <div className="w-full rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
-
-                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-2xl">
-                    🏍️
-                  </div>
-
-                  <h2 className="mt-3 text-base font-extrabold text-slate-900">
-                    Ready to ride?
-                  </h2>
-
-                  <p className="mt-1.5 text-xs leading-5 text-slate-500">
-                    Start navigation to open your
-                    rider timeline and useful stops.
-                  </p>
-
-                </div>
-
-              </div>
-
-            ) : (
-
-              <div className="relative pb-6">
-
-                {/* ======================================================
-                    VERTICAL TIMELINE
-                    ====================================================== */}
-
-                <div className="pointer-events-none absolute bottom-7 left-[22px] top-2 z-0 w-[3px] rounded-full bg-slate-200">
-
-                  <div
-                    className="absolute left-0 top-0 w-full rounded-full bg-blue-500 transition-all duration-700"
-                    style={{
-                      height: `${Math.min(
-                        100,
-                        currentProgressPercent
-                      )}%`,
-                    }}
-                  />
-
-                  {/* Current position */}
-
-                  <div
-                    className="route-location-dot absolute left-1/2 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-4 border-white bg-blue-600 shadow-lg transition-all duration-700"
-                    style={{
-                      top: `${Math.min(
-                        100,
-                        Math.max(
-                          0,
-                          currentProgressPercent
-                        )
-                      )}%`,
-                    }}
-                  >
-                    <div className="h-1.5 w-1.5 rounded-full bg-white" />
-                  </div>
-
-                  {/* Destination */}
-
-                  <div className="absolute bottom-0 left-1/2 flex h-9 w-9 -translate-x-1/2 translate-y-1/2 items-center justify-center rounded-full border-4 border-white bg-green-600 text-sm shadow-lg">
-                    ⚑
-                  </div>
-
-                </div>
-
-                {/* Current location */}
-
-                <div className="relative z-10 mb-5 ml-10">
-
-                  <div className="inline-flex items-center gap-2 rounded-full border border-blue-100 bg-white px-2.5 py-1.5 text-[9px] font-bold text-blue-700 shadow-sm">
-
-                    <span className="h-1.5 w-1.5 rounded-full bg-blue-600" />
-
-                    Current location
-
-                    {speed !== null && (
-                      <span className="text-slate-400">
-                        {speed.toFixed(0)} km/h
-                      </span>
-                    )}
-
-                  </div>
-
-                </div>
-
-                {/* ======================================================
-                    FILTERED PLACE CARDS
-                    ====================================================== */}
-
-                <div className="relative z-10 ml-10">
-
-                  {filteredPlaces.map(
-                    (
-                      item,
-                      index
-                    ) => {
-
-                      const isExpanded =
-                        expandedPlaceId ===
-                        item.id;
-
-                      return (
-                        <article
-                          key={
-                            item.id
-                          }
-                          className="journey-card relative mb-3.5 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md"
-                          style={{
-                            animationDelay: `${
-                              index * 50
-                            }ms`,
-                          }}
-                        >
-
-                          {/* Timeline connector */}
-
-                          <div className="pointer-events-none absolute -left-[18px] top-7 h-px w-[18px] bg-slate-200" />
-
-                          {/* Timeline node */}
-
-                          <div
-                            className={`absolute -left-[31px] top-[18px] flex h-6 w-6 items-center justify-center rounded-full border-4 border-slate-50 text-[8px] font-black text-white shadow ${
-                              item.isHidden
-                                ? "bg-violet-600"
-                                : "bg-slate-700"
-                            }`}
-                          >
-                            {
-                              index +
-                              1
-                            }
-                          </div>
-
-                          {/* Category + Hidden */}
-
-                          <div className="flex items-center justify-between gap-2">
-
-                            <span className="inline-flex items-center gap-1 rounded-full bg-slate-50 px-2 py-1 text-[8px] font-bold text-slate-600">
-
-                              <span>
-                                {
-                                  item.categoryIcon
-                                }
-                              </span>
-
-                              {
-                                item.categoryLabel
-                              }
-
-                            </span>
-
-                            {item.isHidden && (
-                              <span className="rounded-full bg-violet-50 px-2 py-1 text-[7px] font-black text-violet-600">
-                                Hidden
-                              </span>
-                            )}
-
-                          </div>
-
-                          {/* Name / Location */}
-
-                          <div className="mt-2.5 min-w-0">
-
-                            <div className="flex items-start justify-between gap-2">
-
-                              <h2 className="min-w-0 flex-1 text-[12px] font-extrabold leading-4 text-slate-900">
-                                {
-                                  item.name
-                                }
-                              </h2>
-
-                              {isNavigating &&
-                                item.coordinates &&
-                                position && (
-                                  <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-[8px] font-bold text-blue-600">
-                                    {
-                                      formatDistance(
-                                        haversineDistanceMeters(
-                                          position,
-                                          item.coordinates
-                                        )
-                                      )
-                                    }
-                                  </span>
-                                )}
-
-                            </div>
-
-                            <p className="mt-0.5 line-clamp-1 text-[8px] text-slate-400">
-                              {
-                                cleanText(
-                                  item.location ||
-                                    item.formattedAddress ||
-                                    "Bharatpur, Chitwan"
-                                )
-                              }
-                            </p>
-
-                          </div>
-
-                          {/* Short description */}
-
-                          <div className="mt-2">
-
-                            {isExpanded ? (
-
-                              <p className="text-[10px] leading-4 text-slate-500">
-                                {
-                                  cleanText(
-                                    item.description ||
-                                      item.conciseDescription
-                                  )
-                                }
-                              </p>
-
-                            ) : (
-
-                              <p className="line-clamp-2 text-[10px] leading-4 text-slate-500">
-                                {
-                                  item.conciseDescription
-                                }
-                              </p>
-
-                            )}
-
-                            {cleanText(
-                              item.description
-                            ).length >
-                              item.conciseDescription.length && (
-
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setExpandedPlaceId(
-                                    (
-                                      current
-                                    ) =>
-                                      current ===
-                                      item.id
-                                        ? null
-                                        : item.id
-                                  )
-                                }
-                                className="mt-1 inline-flex items-center gap-1 text-[8px] font-black text-blue-600"
-                              >
-
-                                {isExpanded
-                                  ? "Show less"
-                                  : "Read more"}
-
-                                <span
-                                  className={`transition-transform duration-200 ${
-                                    isExpanded
-                                      ? "rotate-180"
-                                      : ""
-                                  }`}
-                                >
-                                  ↓
-                                </span>
-
-                              </button>
-
-                            )}
-
-                          </div>
-
-                          {/* Compact actions */}
-
-                          <div className="mt-2.5 flex gap-1.5">
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                showPlaceOnMap(
-                                  item
-                                )
-                              }
-                              className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[8px] font-bold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
-                            >
-                              👁 View
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() =>
-                                openDirections(
-                                  item
-                                )
-                              }
-                              className="flex-1 rounded-lg bg-blue-600 px-2 py-1.5 text-[8px] font-bold text-white transition hover:bg-blue-700"
-                            >
-                              🧭 Go
-                            </button>
-
-                          </div>
-
-                        </article>
-                      );
-                    }
-                  )}
-
-                </div>
-
-                {/* ======================================================
-                    DESTINATION
-                    ====================================================== */}
-
-                <div className="relative z-10 ml-10 mt-6 flex items-center gap-2.5">
-
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-green-600 text-sm text-white shadow">
-                    ⚑
-                  </div>
-
-                  <div className="rounded-xl bg-white px-2.5 py-2 shadow-sm">
-
-                    <p className="text-[7px] font-bold uppercase tracking-wide text-slate-400">
-                      Destination
-                    </p>
-
-                    <p className="mt-0.5 max-w-[230px] truncate text-[10px] font-extrabold text-slate-800">
-                      {
-                        place?.name ||
-                        "Destination"
-                      }
-                    </p>
-
-                  </div>
-
-                </div>
-
-              </div>
-            )}
-
-          </div>
-
-          {/* ============================================================
-              NAVIGATION CONTROLS
-              ============================================================ */}
-
-          <div className="shrink-0 border-t border-slate-200 bg-white p-3">
-
-            {!isNavigating ? (
-
-              <button
-                type="button"
-                onClick={
-                  startNavigation
-                }
-                disabled={
-                  loadingRoute
-                }
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-xs font-black text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-
-                🧭
-
-                {loadingRoute
-                  ? "Preparing route..."
-                  : "Start Navigation"}
-
-              </button>
-
-            ) : (
-
-              <div className="grid grid-cols-2 gap-2">
 
                 <button
-                  type="button"
+                  onClick={() =>
+                    startPlaceNavigation(
+                      selectedPlace
+                    )
+                  }
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white"
+                >
+                  <Navigation
+                    size={14}
+                  />
+                  Directions
+                </button>
+              </div>
+            </InfoWindow>
+          )}
+      </GoogleMap>
+
+      <div className="absolute left-4 top-4 z-20 w-[min(390px,calc(100vw-32px))] overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="border-b border-slate-200 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
+                Bharatpur AI
+              </p>
+
+              <h1 className="mt-1 text-xl font-bold text-slate-900">
+                {navigationPlace?.name ||
+                  destinationPlace?.name ||
+                  "Discover Bharatpur"}
+              </h1>
+
+              <p className="mt-1 text-xs text-slate-500">
+                Google Maps navigation
+              </p>
+            </div>
+
+            <button
+              onClick={() =>
+                window.history.back()
+              }
+              className="rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+            >
+              <ArrowLeft
+                size={18}
+              />
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-[calc(100vh-110px)] overflow-y-auto">
+          {navigationError && (
+            <div className="m-4 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+              {navigationError}
+            </div>
+          )}
+
+          {gpsError && (
+            <div className="mx-4 mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-700">
+              {gpsError}
+            </div>
+          )}
+
+          {isNavigating ? (
+            <div className="p-4">
+              <div className="rounded-2xl bg-slate-900 p-4 text-white">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-slate-300">
+                      Navigating to
+                    </p>
+
+                    <h2 className="mt-1 font-bold">
+                      {
+                        navigationPlace?.name
+                      }
+                    </h2>
+                  </div>
+
+                  <Navigation
+                    size={24}
+                  />
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-white/10 p-3">
+                    <p className="text-[11px] text-slate-300">
+                      Distance
+                    </p>
+
+                    <p className="mt-1 text-lg font-bold">
+                      {formatDistance(
+                        currentRouteMetrics.distance
+                      )}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white/10 p-3">
+                    <p className="text-[11px] text-slate-300">
+                      ETA
+                    </p>
+
+                    <p className="mt-1 text-lg font-bold">
+                      {formatDuration(
+                        currentRouteMetrics.duration
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-4">
+                  <div className="mb-1 flex justify-between text-[11px] text-slate-300">
+                    <span>
+                      Route
+                      progress
+                    </span>
+
+                    <span>
+                      {Math.round(
+                        routeProgress
+                      )}
+                      %
+                    </span>
+                  </div>
+
+                  <div className="h-2 overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-blue-500 transition-all"
+                      style={{
+                        width: `${routeProgress}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+
+                {offRoute && (
+                  <div className="mt-4 rounded-xl bg-red-500/20 p-3 text-xs text-red-200">
+                    You are off
+                    the route.
+                    Recalculating...
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <button
+                  onClick={
+                    centerOnUser
+                  }
+                  className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <LocateFixed
+                    size={17}
+                  />
+                  You
+                </button>
+
+                <button
+                  onClick={
+                    centerOnDestination
+                  }
+                  className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  <MapPin
+                    size={17}
+                  />
+                  Place
+                </button>
+
+                <button
                   onClick={
                     recalculateRoute
                   }
                   disabled={
-                    loadingRoute
+                    recalculating
                   }
-                  className="rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[10px] font-bold text-slate-800 transition hover:bg-slate-50 disabled:opacity-50"
+                  className="flex flex-col items-center justify-center gap-1 rounded-xl border border-slate-200 bg-white p-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
-
-                  {loadingRoute
-                    ? "Loading..."
-                    : "↻ Recalculate"}
-
-                </button>
-
-                <button
-                  type="button"
-                  onClick={
-                    stopNavigation
-                  }
-                  className="rounded-xl bg-red-600 px-3 py-2.5 text-[10px] font-bold text-white transition hover:bg-red-700"
-                >
-                  ■ Stop
-                </button>
-
-              </div>
-
-            )}
-
-            {/* ==========================================================
-                ROUTE 1 / 2 / 3
-                ========================================================== */}
-
-            {isNavigating &&
-              routes.length >
-                0 && (
-
-              <div className="mt-2.5">
-
-                <div className="mb-1.5 flex items-center justify-between">
-
-                  <p className="text-[8px] font-black uppercase tracking-wide text-slate-400">
-                    Route options
-                  </p>
-
-                  <p className="text-[8px] text-slate-400">
-                    {
-                      routes.length
-                    } available
-                  </p>
-
-                </div>
-
-                <div className="grid grid-cols-3 gap-1.5">
-
-                  {routes.map(
-                    (
-                      routeItem,
-                      index
-                    ) => {
-
-                      const active =
-                        selectedRoute ===
-                        index;
-
-                      return (
-                        <button
-                          key={
-                            routeItem.index
-                          }
-                          type="button"
-                          onClick={() =>
-                            selectRoute(
-                              index
-                            )
-                          }
-                          className={`relative rounded-xl border px-2.5 py-2 text-left transition-all duration-200 ${
-                            active
-                              ? "border-blue-600 bg-blue-50 shadow-sm"
-                              : "border-slate-200 bg-white hover:border-blue-300"
-                          }`}
-                        >
-
-                          {active && (
-                            <span className="absolute right-1.5 top-1.5 text-[8px] font-black text-blue-600">
-                              ✓
-                            </span>
-                          )}
-
-                          <p
-                            className={`text-[9px] font-black ${
-                              active
-                                ? "text-blue-700"
-                                : "text-slate-800"
-                            }`}
-                          >
-                            Route{" "}
-                            {index +
-                              1}
-                          </p>
-
-                          <p className="mt-0.5 text-[8px] font-semibold text-slate-500">
-                            {
-                              formatDistance(
-                                routeItem.distanceMeters
-                              )
-                            }
-                          </p>
-
-                          <p className="text-[8px] text-slate-400">
-                            {
-                              formatDuration(
-                                routeItem.durationMillis
-                              )
-                            }
-                          </p>
-
-                        </button>
-                      );
+                  <RefreshCw
+                    size={17}
+                    className={
+                      recalculating
+                        ? "animate-spin"
+                        : ""
                     }
-                  )}
-
-                </div>
-
+                  />
+                  Route
+                </button>
               </div>
 
-            )}
-
-          </div>
-
-        </aside>
-
-        {/* ==============================================================
-            MAP
-            ============================================================== */}
-
-        <section className="relative min-h-0 flex-1 bg-slate-100">
-
-          <GoogleMap
-            mapContainerStyle={
-              MAP_CONTAINER_STYLE
-            }
-            center={
-              mapCenter
-            }
-            zoom={14}
-            onLoad={
-              onMapLoad
-            }
-            onUnmount={
-              onMapUnmount
-            }
-            options={{
-              streetViewControl:
-                false,
-
-              mapTypeControl:
-                false,
-
-              fullscreenControl:
-                true,
-
-              clickableIcons:
-                true,
-
-              gestureHandling:
-                "greedy",
-            }}
-          >
-
-            {/* ==========================================================
-                DESTINATION MARKER
-                ========================================================== */}
-
-            <Marker
-              position={
-                destination
-              }
-              title={
-                place?.name ||
-                "Destination"
-              }
-            />
-
-            {/* ==========================================================
-                CURRENT LOCATION
-                ========================================================== */}
-
-            {isNavigating &&
-              position && (
-
-              <Marker
-                position={
-                  position
+              <button
+                onClick={
+                  stopNavigation
                 }
-                title="Your current location"
-                icon={{
-                  path:
-                    window.google
-                      ?.maps
-                      ?.SymbolPath
-                      ?.CIRCLE,
-
-                  scale: 8,
-
-                  fillColor:
-                    "#2563eb",
-
-                  fillOpacity: 1,
-
-                  strokeColor:
-                    "#ffffff",
-
-                  strokeWeight: 3,
-                }}
-              />
-
-            )}
-
-            {/* ==========================================================
-                IMPORTANT:
-                NO HIDDEN PLACE MARKERS / PURPLE DOTS
-                ========================================================== */}
-
-            {/* ==========================================================
-                ALTERNATIVE ROUTES
-                ========================================================== */}
-
-            {isNavigating &&
-              routes.map(
-                (
-                  routeItem,
-                  index
-                ) => {
-
-                  if (
-                    index ===
-                    selectedRoute
-                  ) {
-                    return null;
-                  }
-
-                  if (
-                    !routeItem.path ||
-                    routeItem.path.length <
-                      2
-                  ) {
-                    return null;
-                  }
-
-                  return (
-                    <Polyline
-                      key={`alternative-${index}`}
-                      path={
-                        routeItem.path
-                      }
-                      options={{
-                        strokeColor:
-                          "#94a3b8",
-
-                        strokeOpacity:
-                          0.42,
-
-                        strokeWeight:
-                          4,
-
-                        geodesic:
-                          true,
-
-                        zIndex: 4,
-                      }}
-                    />
-                  );
-                }
-              )}
-
-            {/* ==========================================================
-                SELECTED ROUTE
-                ========================================================== */}
-
-            {isNavigating &&
-              route?.path?.length >
-                1 && (
-
-              <Polyline
-                path={
-                  route.path
-                }
-                options={{
-                  strokeColor:
-                    "#2563eb",
-
-                  strokeOpacity:
-                    0.92,
-
-                  strokeWeight:
-                    6,
-
-                  geodesic:
-                    true,
-
-                  zIndex: 10,
-                }}
-              />
-
-            )}
-
-            {/* ==========================================================
-                INFO WINDOW
-                ========================================================== */}
-
-            {selectedPlace?.coordinates && (
-
-              <InfoWindow
-                position={
-                  selectedPlace.coordinates
-                }
-                onCloseClick={() =>
-                  setSelectedPlace(
-                    null
-                  )
-                }
+                className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-4 py-3 text-sm font-bold text-red-600 hover:bg-red-100"
               >
+                <X size={17} />
+                Stop Navigation
+              </button>
 
-                <div className="min-w-[210px] max-w-[250px]">
+              {routes.length >
+                0 && (
+                  <div className="mt-5">
+                    <div className="mb-3 flex items-center gap-2">
+                      <RouteIcon
+                        size={17}
+                        className="text-blue-600"
+                      />
 
-                  <div className="text-[10px] font-bold uppercase tracking-wide text-blue-600">
+                      <h3 className="font-bold text-slate-900">
+                        Route
+                        options
+                      </h3>
+                    </div>
 
-                    {
-                      selectedPlace.categoryIcon
-                    }{" "}
+                    <div className="space-y-2">
+                      {routes.map(
+                        (
+                          route,
+                          index
+                        ) => {
+                          const metrics =
+                            getRouteMetrics(
+                              route
+                            );
 
-                    {
-                      selectedPlace.categoryLabel
-                    }
+                          const active =
+                            index ===
+                            selectedRouteIndex;
 
+                          return (
+                            <button
+                              key={
+                                route.id
+                              }
+                              onClick={() =>
+                                setSelectedRouteIndex(
+                                  index
+                                )
+                              }
+                              className={`w-full rounded-xl border p-3 text-left transition ${active
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-slate-200 bg-white hover:bg-slate-50"
+                                }`}
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`flex h-7 w-7 items-center justify-center rounded-full text-xs font-bold ${active
+                                      ? "bg-blue-600 text-white"
+                                      : "bg-slate-100 text-slate-600"
+                                      }`}
+                                  >
+                                    {index +
+                                      1}
+                                  </div>
+
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-900">
+                                      {getRouteLabel(
+                                        route,
+                                        index
+                                      )}
+                                    </p>
+
+                                    <p className="text-xs text-slate-500">
+                                      {route.description ||
+                                        "Google route"}
+                                    </p>
+                                  </div>
+                                </div>
+
+                                <div className="text-right">
+                                  <p className="text-sm font-bold text-slate-900">
+                                    {formatDuration(
+                                      metrics.duration
+                                    )}
+                                  </p>
+
+                                  <p className="text-xs text-slate-500">
+                                    {formatDistance(
+                                      metrics.distance
+                                    )}
+                                  </p>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        }
+                      )}
+                    </div>
+                  </div>
+                )}
+
+              <div className="mt-5 rounded-xl bg-slate-50 p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Car
+                      size={17}
+                      className="text-blue-600"
+                    />
+
+                    <span className="text-xs font-semibold text-slate-700">
+                      Current
+                      speed
+                    </span>
                   </div>
 
-                  <h3 className="mt-1 text-sm font-bold text-slate-900">
-
-                    {
-                      selectedPlace.name
-                    }
-
-                  </h3>
-
-                  <p className="mt-1 text-xs leading-5 text-slate-500">
-
-                    {
-                      selectedPlace.conciseDescription ||
-                      selectedPlace.description
-                    }
-
-                  </p>
-
+                  <span className="text-sm font-bold text-slate-900">
+                    {Number(
+                      speed * 3.6
+                    ).toFixed(
+                      1
+                    )}{" "}
+                    km/h
+                  </span>
                 </div>
 
-              </InfoWindow>
+                <div className="mt-2 flex items-center justify-between">
+                  <span className="text-xs text-slate-500">
+                    Destination
+                  </span>
 
-            )}
+                  <span className="text-xs font-semibold text-slate-700">
+                    {formatDistance(
+                      destinationDistance
+                    )}
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4">
+              <button
+                onClick={() =>
+                  startNavigation()
+                }
+                disabled={
+                  loadingRoute ||
+                  !destinationPlace
+                }
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-blue-200 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Navigation
+                  size={18}
+                />
 
-          </GoogleMap>
+                {loadingRoute
+                  ? "Calculating route..."
+                  : "Start Navigation"}
+              </button>
 
-          {/* ============================================================
-              MAP TOP STATUS
-              ============================================================ */}
+              <button
+                onClick={
+                  centerOnUser
+                }
+                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                <Crosshair
+                  size={17}
+                />
+                My Location
+              </button>
+            </div>
+          )}
 
-          <div className="pointer-events-none absolute left-3 right-3 top-3 z-20">
+          <div className="border-t border-slate-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900">
+                  Other Places
+                </h3>
 
-            <div className="inline-flex max-w-full items-center gap-2 rounded-xl border border-white/70 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
-
-              <span className="text-sm">
-                🏍️
-              </span>
-
-              <div className="min-w-0">
-
-                <p className="truncate text-[10px] font-black text-slate-800">
-                  {
-                    place?.name ||
-                    "Bharatpur Journey"
-                  }
+                <p className="mt-1 text-xs text-slate-500">
+                  Discover places near
+                  you
                 </p>
-
-                <p className="text-[8px] text-slate-400">
-
-                  {isNavigating
-                    ? `Route ${
-                        selectedRoute +
-                        1
-                      } • ${formatDistance(
-                        distanceToDestination
-                      )} left`
-                    : "Ready to explore"}
-
-                </p>
-
               </div>
 
+              <button
+                onClick={() =>
+                  setShowOtherPlaces(
+                    (value) =>
+                      !value
+                  )
+                }
+                className="text-xs font-semibold text-blue-600"
+              >
+                {showOtherPlaces
+                  ? "Hide"
+                  : "Show"}
+              </button>
             </div>
 
-          </div>
+            {showOtherPlaces && (
+              <>
+                <div className="relative mt-4">
+                  <Search
+                    size={16}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  />
 
-          {/* ============================================================
-              ACTIVE ROUTE
-              ============================================================ */}
-
-          {isNavigating &&
-            routes.length >
-              0 && (
-
-            <div className="absolute bottom-3 left-3 z-20">
-
-              <div className="rounded-xl border border-white/70 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
-
-                <div className="flex items-center gap-2">
-
-                  <span className="h-2 w-2 rounded-full bg-blue-600" />
-
-                  <span className="text-[9px] font-black text-slate-700">
-                    Route{" "}
-                    {selectedRoute +
-                      1}
-                  </span>
-
-                  <span className="text-[8px] text-slate-400">
-                    •
-                  </span>
-
-                  <span className="text-[9px] font-semibold text-slate-500">
-                    {
-                      formatDistance(
-                        route?.distanceMeters
+                  <input
+                    value={search}
+                    onChange={(
+                      event
+                    ) =>
+                      setSearch(
+                        event
+                          .target
+                          .value
                       )
                     }
-                  </span>
-
+                    placeholder="Search places..."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
+                  />
                 </div>
 
-              </div>
+                <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+                  {categoryOptions.map(
+                    (
+                      item
+                    ) => (
+                      <button
+                        key={
+                          item
+                        }
+                        onClick={() =>
+                          setCategory(
+                            item
+                          )
+                        }
+                        className={`whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-semibold ${category ===
+                          item
+                          ? "bg-blue-600 text-white"
+                          : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                          }`}
+                      >
+                        {
+                          item
+                        }
+                      </button>
+                    )
+                  )}
+                </div>
 
-            </div>
+                <div className="mt-4 space-y-3">
+                  {loadingPlaces ? (
+                    <div className="py-8 text-center text-xs text-slate-500">
+                      Loading
+                      places...
+                    </div>
+                  ) : nearbyPlaces.length ===
+                    0 ? (
+                    <div className="rounded-xl bg-slate-50 p-5 text-center">
+                      <MapPin
+                        size={
+                          28
+                        }
+                        className="mx-auto mb-2 text-slate-300"
+                      />
 
-          )}
+                      <p className="text-sm font-semibold text-slate-600">
+                        No places
+                        found
+                      </p>
+                    </div>
+                  ) : (
+                    nearbyPlaces.map(
+                      ({
+                        place,
+                        distance,
+                      }) => (
+                        <div
+                          key={getPlaceKey(
+                            place
+                          )}
+                          className="rounded-xl border border-slate-200 bg-white p-3"
+                        >
+                          <div className="flex gap-3">
+                            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-lg">
+                              {getCategoryIcon(
+                                getPlaceCategory(
+                                  place
+                                )
+                              )}
+                            </div>
 
-          {/* ============================================================
-              OFF ROUTE
-              ============================================================ */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-start justify-between gap-2">
+                                <h4 className="truncate text-sm font-bold text-slate-900">
+                                  {
+                                    place.name
+                                  }
+                                </h4>
 
-          {offRoute && (
+                                {place.rating >
+                                  0 && (
+                                    <span className="flex shrink-0 items-center gap-1 text-xs font-semibold text-amber-600">
+                                      <Star
+                                        size={
+                                          12
+                                        }
+                                        fill="currentColor"
+                                      />
+                                      {
+                                        place.rating
+                                      }
+                                    </span>
+                                  )}
+                              </div>
 
-            <div className="absolute right-3 top-20 z-30">
+                              <p className="mt-1 truncate text-xs text-slate-500">
+                                {getPlaceCategories(place).join(", ") || "Other"}
+                              </p>
 
-              <div className="rounded-xl bg-red-600 px-3 py-2 text-[9px] font-bold text-white shadow-lg">
+                              <p className="mt-1 text-xs font-medium text-blue-600">
+                                {formatDistance(
+                                  distance
+                                )}{" "}
+                                away
+                              </p>
+                            </div>
+                          </div>
 
-                Off route • Recalculating
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              onClick={() =>
+                                setSelectedPlace(
+                                  place
+                                )
+                              }
+                              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                            >
+                              View
+                            </button>
 
-              </div>
-
-            </div>
-
-          )}
-
-          {/* ============================================================
-              NAVIGATION ERROR
-              ============================================================ */}
-
-          {navigationError && (
-
-            <div className="absolute bottom-3 right-3 z-30 max-w-[300px]">
-
-              <div className="rounded-xl border border-red-100 bg-white/95 px-3 py-2 shadow-lg backdrop-blur">
-
-                <p className="text-[9px] font-bold text-red-700">
-                  Navigation notice
-                </p>
-
-                <p className="mt-0.5 text-[9px] leading-4 text-red-600">
-                  {
-                    navigationError
-                  }
-                </p>
-
-              </div>
-
-            </div>
-
-          )}
-
-        </section>
-
+                            <button
+                              onClick={() =>
+                                startPlaceNavigation(
+                                  place
+                                )
+                              }
+                              className="flex items-center justify-center gap-1 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                            >
+                              <Navigation
+                                size={
+                                  13
+                                }
+                              />
+                              Directions
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    )
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
       </div>
-    </>
+
+      {loadingRoute && (
+        <div className="absolute bottom-5 left-1/2 z-30 -translate-x-1/2 rounded-full bg-slate-900 px-5 py-3 text-xs font-semibold text-white shadow-xl">
+          <span className="flex items-center gap-2">
+            <RefreshCw
+              size={14}
+              className="animate-spin"
+            />
+            Calculating Google route...
+          </span>
+        </div>
+      )}
+    </div>
   );
-}
+};
+
+export default Placemap;

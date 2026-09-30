@@ -1,3 +1,6 @@
+
+
+
 import {
   useEffect,
   useMemo,
@@ -37,41 +40,62 @@ CATEGORY NORMALIZER
 =========================================================
 */
 
-const normalizeCategories =
-  (category) => {
+const getCategoryName = (category) => {
+  if (!category) return "";
 
-    if (
-      Array.isArray(
-        category
-      )
-    ) {
-      return category
-        .map(
-          (item) =>
-            String(
-              item
-            ).trim()
-        )
-        .filter(Boolean);
-    }
+  if (typeof category === "string") {
+    return category.trim();
+  }
 
+  if (typeof category === "object") {
+    return String(
+      category.name ||
+      category.title ||
+      category.label ||
+      category.slug ||
+      ""
+    ).trim();
+  }
 
-    if (
-      typeof category ===
-      "string"
-    ) {
-      return category
+  return "";
+};
+
+const getCategoryId = (category) => {
+  if (!category) return "";
+
+  if (typeof category === "string") {
+    return category.trim();
+  }
+
+  if (typeof category === "object") {
+    return String(
+      category._id ||
+      category.id ||
+      category.slug ||
+      ""
+    ).trim();
+  }
+
+  return "";
+};
+
+const normalizeCategories = (category) => {
+  const values = Array.isArray(category)
+    ? category
+    : category
+      ? [category]
+      : [];
+
+  return values
+    .map(getCategoryName)
+    .flatMap((value) =>
+      String(value)
         .split(",")
-        .map(
-          (item) =>
-            item.trim()
-        )
-        .filter(Boolean);
-    }
-
-
-    return [];
-  };
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+    .filter(Boolean);
+};
 
 
 /*
@@ -657,109 +681,93 @@ const Explore = () => {
   =====================================================
   */
 
-  const openDirections =
-    async (place) => {
+  const openDirections = async (place) => {
+    if (!isLoaded) {
+      return;
+    }
 
-      if (
-        !isLoaded
-      ) {
-        return;
+    if (!isSignedIn) {
+      return;
+    }
+
+    try {
+      setResolvingPlaceId(
+        getPlaceKey(place)
+      );
+
+      const token = await getToken();
+
+      if (!token) {
+        throw new Error(
+          "Authentication token unavailable."
+        );
       }
 
+      /*
+      Always resolve the place before opening
+      directions.
+  
+      This is important because an Admin-created
+      MongoDB place already has _id, but it may
+      not have googlePlaceId yet.
+  
+      The backend will:
+      1. Find the existing MongoDB place.
+      2. Search Google Places.
+      3. Save googlePlaceId to that SAME document.
+      4. Return the updated place.
+      */
 
-      if (
-        !isSignedIn
-      ) {
-        return;
+      const response = await resolvePlace(
+        place.name,
+        token
+      );
+
+      const resolved =
+        response?.place ||
+        response;
+
+      if (!resolved?._id) {
+        throw new Error(
+          "Unable to resolve this place."
+        );
       }
 
-
-      try {
-
-        setResolvingPlaceId(
-          getPlaceKey(
-            place
-          )
+      if (!resolved?.googlePlaceId) {
+        throw new Error(
+          "Google Place ID was not returned for this place."
         );
-
-
-        const token =
-          await getToken();
-
-
-        if (
-          !token
-        ) {
-          throw new Error(
-            "Authentication token unavailable."
-          );
-        }
-
-
-        /*
-        If the place already has an ID,
-        use it directly.
-
-        Otherwise resolve it.
-        */
-
-        let resolved =
-          place;
-
-
-        if (
-          !place._id
-        ) {
-
-          const response =
-            await resolvePlace(
-              place.name,
-              token
-            );
-
-
-          resolved =
-            response?.place ||
-            response;
-
-        }
-
-
-        if (
-          !resolved?._id
-        ) {
-          throw new Error(
-            "Unable to resolve this place."
-          );
-        }
-
-
-        navigate(
-          `/places/${resolved._id}/map`
-        );
-
-      } catch (error) {
-
-        console.error(
-          "Direction error:",
-          error
-        );
-
-
-        alert(
-          error?.message ||
-          "Unable to open directions."
-        );
-
-      } finally {
-
-        setResolvingPlaceId(
-          null
-        );
-
       }
 
-    };
+      console.log(
+        "✅ Resolved place:",
+        resolved
+      );
+
+      console.log(
+        "🆔 Google Place ID:",
+        resolved.googlePlaceId
+      );
+
+      navigate(
+        `/places/${resolved._id}/map`
+      );
+
+    } catch (error) {
+      console.error(
+        "Direction error:",
+        error
+      );
+
+      alert(
+        error?.message ||
+        "Unable to open directions."
+      );
+
+    } finally {
+      setResolvingPlaceId(null);
+    }
+  };
 
 
   /*
@@ -939,12 +947,10 @@ const Explore = () => {
             <div className="flex flex-wrap gap-2">
 
               {categories.map(
-                (category) => (
+                (category, index) => (
 
                   <button
-                    key={
-                      category
-                    }
+                    key={`${getCategoryId(category) || getCategoryName(category)}-${index}`}
                     type="button"
                     onClick={() =>
                       setActiveCategory(
@@ -1137,13 +1143,12 @@ const Explore = () => {
                               )
                               .map(
                                 (
-                                  category
+                                  category,
+                                  index
                                 ) => (
 
                                   <span
-                                    key={
-                                      category
-                                    }
+                                    key={`${category}-${index}`}
                                     className="rounded-full border border-white/20 bg-black/25 px-2.5 py-1 text-[11px] font-bold text-white backdrop-blur-md"
                                   >
                                     {
@@ -1372,13 +1377,12 @@ const Explore = () => {
                     selectedPlace.category
                   ).map(
                     (
-                      category
+                      category,
+                      index
                     ) => (
 
                       <span
-                        key={
-                          category
-                        }
+                        key={`${category}-${index}`}
                         className="rounded-full border border-white/20 bg-black/25 px-3 py-1.5 text-xs font-bold backdrop-blur-md"
                       >
                         {

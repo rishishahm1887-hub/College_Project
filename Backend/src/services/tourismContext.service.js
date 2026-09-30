@@ -131,7 +131,10 @@ export async function getTourismContext(
 
     if (places.length === 0) {
         places =
-            await Place.find({})
+            await Place.find({}).populate(
+                "category",
+                "name slug isActive"
+            )
                 .select(
                     [
                         "name",

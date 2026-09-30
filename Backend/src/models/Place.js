@@ -22,7 +22,6 @@ const placeSchema = new mongoose.Schema(
             trim: true,
         },
 
-        // Google Place ID
         googlePlaceId: {
             type: String,
             trim: true,
@@ -57,26 +56,31 @@ const placeSchema = new mongoose.Schema(
             default: 0,
         },
 
-        category: {
-            type: [String],
-            default: [],
-        },
-
         /*
         =====================================================
-        TRIP PLANNING FIELDS
+        CATEGORIES
         =====================================================
         */
 
-        // Approximate cost of visiting this place.
-        // Used by the trip planner.
+        category: [
+            {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "Category",
+            },
+        ],
+
+        /*
+        =====================================================
+        TRIP PLANNING
+        =====================================================
+        */
+
         estimatedCost: {
             type: Number,
             default: 0,
             min: 0,
         },
 
-        // Approximate amount of time user normally spends here.
         estimatedVisitMinutes: {
             type: Number,
             default: 120,
@@ -192,7 +196,6 @@ const placeSchema = new mongoose.Schema(
     }
 );
 
-
 /*
 =====================================================
 VIRTUAL LATITUDE
@@ -200,9 +203,11 @@ VIRTUAL LATITUDE
 */
 
 placeSchema.virtual("latitude").get(function () {
-    return this.locationPoint?.coordinates?.[1] ?? null;
+    return (
+        this.locationPoint?.coordinates?.[1] ??
+        null
+    );
 });
-
 
 /*
 =====================================================
@@ -211,9 +216,11 @@ VIRTUAL LONGITUDE
 */
 
 placeSchema.virtual("longitude").get(function () {
-    return this.locationPoint?.coordinates?.[0] ?? null;
+    return (
+        this.locationPoint?.coordinates?.[0] ??
+        null
+    );
 });
-
 
 /*
 =====================================================
@@ -228,7 +235,6 @@ placeSchema.index({
 placeSchema.index({
     providerPlaceId: 1,
 });
-
 
 export default mongoose.model(
     "Place",

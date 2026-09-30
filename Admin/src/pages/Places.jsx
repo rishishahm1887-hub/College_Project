@@ -61,7 +61,7 @@ const emptyForm = {
     rating: 0,
     reviews: 0,
 
-    category: "",
+    category: [],
 
     estimatedCost: 0,
     estimatedVisitMinutes: 15,
@@ -103,7 +103,13 @@ const Places = () => {
     const [places, setPlaces] =
         useState([]);
 
+    const [categories, setCategories] =
+        useState([]);
+
     const [loading, setLoading] =
+        useState(true);
+
+    const [categoriesLoading, setCategoriesLoading] =
         useState(true);
 
     const [search, setSearch] =
@@ -116,7 +122,9 @@ const Places = () => {
         useState(null);
 
     const [form, setForm] =
-        useState(emptyForm);
+        useState({
+            ...emptyForm,
+        });
 
     const [saving, setSaving] =
         useState(false);
@@ -158,12 +166,52 @@ const Places = () => {
 
     /*
     ==============================================
+    LOAD CATEGORIES
+    ==============================================
+    */
+
+    const loadCategories = async () => {
+        try {
+            setCategoriesLoading(
+                true
+            );
+
+            const data =
+                await apiRequest(
+                    "/admin/categories",
+                    {},
+                    getToken
+                );
+
+            setCategories(
+                data.categories || []
+            );
+        } catch (error) {
+            console.error(
+                "Load categories error:",
+                error
+            );
+
+            alert(
+                error.message ||
+                "Failed to load categories."
+            );
+        } finally {
+            setCategoriesLoading(
+                false
+            );
+        }
+    };
+
+    /*
+    ==============================================
     INITIAL LOAD
     ==============================================
     */
 
     useEffect(() => {
         loadPlaces();
+        loadCategories();
     }, []);
 
     /*
@@ -177,6 +225,7 @@ const Places = () => {
 
         setForm({
             ...emptyForm,
+            category: [],
         });
 
         setModal(true);
@@ -189,10 +238,13 @@ const Places = () => {
     */
 
     const openEdit = (place) => {
-        setEditingId(place._id);
+        setEditingId(
+            place._id
+        );
 
         /*
-        GeoJSON:
+        GeoJSON coordinates:
+
         [longitude, latitude]
         */
 
@@ -207,6 +259,29 @@ const Places = () => {
                 ?.coordinates?.[1] ??
             place.lat ??
             "";
+
+        /*
+        Category can be:
+
+        ObjectId string
+        OR
+        populated category object
+        */
+
+        const selectedCategories =
+            Array.isArray(
+                place.category
+            )
+                ? place.category
+                    .map(
+                        (category) =>
+                            typeof category ===
+                                "string"
+                                ? category
+                                : category?._id
+                    )
+                    .filter(Boolean)
+                : [];
 
         setForm({
             slug:
@@ -244,13 +319,7 @@ const Places = () => {
                 place.reviews ?? 0,
 
             category:
-                Array.isArray(
-                    place.category
-                )
-                    ? place.category.join(
-                        ", "
-                    )
-                    : "",
+                selectedCategories,
 
             estimatedCost:
                 place.estimatedCost ??
@@ -286,13 +355,6 @@ const Places = () => {
     ==============================================
     MAP CLICK
     ==============================================
-    
-    User clicks anywhere on Google Map.
-    We only receive coordinates.
-
-    No Places API.
-    No Geocoding API.
-    ==============================================
     */
 
     const handleMapClick = (event) => {
@@ -316,9 +378,7 @@ const Places = () => {
 
         setForm((current) => ({
             ...current,
-
             latitude,
-
             longitude,
         }));
     };
@@ -326,9 +386,6 @@ const Places = () => {
     /*
     ==============================================
     MARKER DRAG
-    ==============================================
-    
-    User can drag marker to adjust location.
     ==============================================
     */
 
@@ -355,11 +412,48 @@ const Places = () => {
 
         setForm((current) => ({
             ...current,
-
             latitude,
-
             longitude,
         }));
+    };
+
+    /*
+    ==============================================
+    TOGGLE CATEGORY
+    ==============================================
+    */
+
+    const toggleCategory = (
+        categoryId
+    ) => {
+        setForm((current) => {
+            const selected =
+                Array.isArray(
+                    current.category
+                )
+                    ? current.category
+                    : [];
+
+            const exists =
+                selected.includes(
+                    categoryId
+                );
+
+            return {
+                ...current,
+
+                category: exists
+                    ? selected.filter(
+                        (id) =>
+                            id !==
+                            categoryId
+                    )
+                    : [
+                        ...selected,
+                        categoryId,
+                    ],
+            };
+        });
     };
 
     /*
@@ -376,15 +470,37 @@ const Places = () => {
 
             /*
             ======================================
+            NAME VALIDATION
+            ======================================
+            */
+
+            if (
+                !form.name.trim()
+            ) {
+                alert(
+                    "Place name is required."
+                );
+
+                setSaving(false);
+
+                return;
+            }
+
+            /*
+            ======================================
             LOCATION VALIDATION
             ======================================
             */
 
             const latitude =
-                Number(form.latitude);
+                Number(
+                    form.latitude
+                );
 
             const longitude =
-                Number(form.longitude);
+                Number(
+                    form.longitude
+                );
 
             if (
                 !Number.isFinite(
@@ -396,24 +512,6 @@ const Places = () => {
             ) {
                 alert(
                     "Please click on the map to select a location."
-                );
-
-                setSaving(false);
-
-                return;
-            }
-
-            /*
-            ======================================
-            NAME VALIDATION
-            ======================================
-            */
-
-            if (
-                !form.name.trim()
-            ) {
-                alert(
-                    "Place name is required."
                 );
 
                 setSaving(false);
@@ -456,21 +554,6 @@ const Places = () => {
 
             /*
             ======================================
-            CATEGORY
-            ======================================
-            */
-
-            const categories =
-                form.category
-                    .split(",")
-                    .map(
-                        (item) =>
-                            item.trim()
-                    )
-                    .filter(Boolean);
-
-            /*
-            ======================================
             SLUG
             ======================================
             */
@@ -491,19 +574,31 @@ const Places = () => {
 
             /*
             ======================================
+            CATEGORY IDS
+            ======================================
+            */
+
+            const categoryIds =
+                Array.isArray(
+                    form.category
+                )
+                    ? [
+                        ...new Set(
+                            form.category.filter(
+                                Boolean
+                            )
+                        ),
+                    ]
+                    : [];
+
+            /*
+            ======================================
             MONGODB PAYLOAD
             ======================================
-            
-            IMPORTANT:
 
-            GeoJSON coordinates are:
+            GeoJSON coordinates:
 
             [longitude, latitude]
-
-            NOT:
-
-            [latitude, longitude]
-            ======================================
             */
 
             const payload = {
@@ -518,11 +613,6 @@ const Places = () => {
                 formattedAddress:
                     form.formattedAddress.trim(),
 
-                /*
-                No Places API means this can
-                remain empty.
-                */
-
                 googlePlaceId:
                     form.googlePlaceId.trim(),
 
@@ -536,11 +626,12 @@ const Places = () => {
 
                 reviews:
                     Number(
-                        form.reviews || 0
+                        form.reviews ||
+                        0
                     ),
 
                 category:
-                    categories,
+                    categoryIds,
 
                 estimatedCost:
                     Number(
@@ -639,11 +730,13 @@ const Places = () => {
 
     /*
     ==============================================
-    DELETE
+    DELETE PLACE
     ==============================================
     */
 
-    const deletePlace = async (id) => {
+    const deletePlace = async (
+        id
+    ) => {
         if (
             !window.confirm(
                 "Delete this place?"
@@ -677,28 +770,56 @@ const Places = () => {
 
     /*
     ==============================================
+    GET CATEGORY NAMES
+    ==============================================
+    */
+
+    const getCategoryNames = (
+        place
+    ) => {
+        if (
+            !Array.isArray(
+                place.category
+            )
+        ) {
+            return [];
+        }
+
+        return place.category
+            .map(
+                (category) =>
+                    typeof category ===
+                        "string"
+                        ? category
+                        : category?.name
+            )
+            .filter(Boolean);
+    };
+
+    /*
+    ==============================================
     SEARCH FILTER
     ==============================================
     */
 
     const filteredPlaces =
-        places.filter((place) => {
-            const categories =
-                Array.isArray(
-                    place.category
-                )
-                    ? place.category.join(
-                        " "
-                    )
-                    : "";
+        places.filter(
+            (place) => {
+                const categoryNames =
+                    getCategoryNames(
+                        place
+                    );
 
-            return `${place.name || ""} ${place.location || ""
-                } ${place.slug || ""} ${categories}`
-                .toLowerCase()
-                .includes(
-                    search.toLowerCase()
-                );
-        });
+                return `${place.name || ""} ${place.location || ""
+                    } ${place.slug || ""} ${categoryNames.join(
+                        " "
+                    )}`
+                    .toLowerCase()
+                    .includes(
+                        search.toLowerCase()
+                    );
+            }
+        );
 
     /*
     ==============================================
@@ -719,6 +840,19 @@ const Places = () => {
                 ),
             }
             : DEFAULT_CENTER;
+
+    /*
+    ==============================================
+    ACTIVE CATEGORIES
+    ==============================================
+    */
+
+    const activeCategories =
+        categories.filter(
+            (category) =>
+                category.isActive !==
+                false
+        );
 
     /*
     ==============================================
@@ -849,6 +983,10 @@ const Places = () => {
                                         Location
                                     </th>
 
+                                    <th className="px-6 py-4 text-xs font-semibold uppercase text-slate-500">
+                                        Google
+                                    </th>
+
                                     <th className="px-6 py-4 text-right text-xs font-semibold uppercase text-slate-500">
                                         Actions
                                     </th>
@@ -862,208 +1000,242 @@ const Places = () => {
                                 {filteredPlaces.map(
                                     (
                                         place
-                                    ) => (
+                                    ) => {
 
-                                        <tr
-                                            key={
-                                                place._id
-                                            }
-                                            className="hover:bg-slate-50"
-                                        >
+                                        const categoryNames =
+                                            getCategoryNames(
+                                                place
+                                            );
 
-                                            {/* PLACE */}
+                                        return (
+                                            <tr
+                                                key={
+                                                    place._id
+                                                }
+                                                className="hover:bg-slate-50"
+                                            >
 
-                                            <td className="px-6 py-4">
+                                                {/* PLACE */}
 
-                                                <div className="flex items-center gap-3">
+                                                <td className="px-6 py-4">
 
-                                                    {place.image ? (
+                                                    <div className="flex items-center gap-3">
 
-                                                        <img
-                                                            src={
-                                                                place.image
+                                                        {place.image ? (
+
+                                                            <img
+                                                                src={
+                                                                    place.image
+                                                                }
+                                                                alt={
+                                                                    place.name
+                                                                }
+                                                                className="h-12 w-12 rounded-lg object-cover"
+                                                            />
+
+                                                        ) : (
+
+                                                            <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
+
+                                                                <MapPin
+                                                                    size={
+                                                                        20
+                                                                    }
+                                                                    className="text-blue-600"
+                                                                />
+
+                                                            </div>
+
+                                                        )}
+
+                                                        <div>
+
+                                                            <p className="font-semibold text-slate-800">
+                                                                {
+                                                                    place.name
+                                                                }
+                                                            </p>
+
+                                                            <p className="max-w-sm truncate text-xs text-slate-500">
+                                                                {place.location ||
+                                                                    place.formattedAddress ||
+                                                                    "—"}
+                                                            </p>
+
+                                                        </div>
+
+                                                    </div>
+
+                                                </td>
+
+                                                {/* CATEGORY */}
+
+                                                <td className="px-6 py-4">
+
+                                                    <div className="flex flex-wrap gap-1">
+
+                                                        {categoryNames.map(
+                                                            (
+                                                                categoryName,
+                                                                index
+                                                            ) => (
+
+                                                                <span
+                                                                    key={`${place._id}-category-${index}`}
+                                                                    className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
+                                                                >
+                                                                    {
+                                                                        categoryName
+                                                                    }
+                                                                </span>
+
+                                                            )
+                                                        )}
+
+                                                        {categoryNames.length ===
+                                                            0 && (
+
+                                                                <span className="text-xs text-slate-400">
+                                                                    No category
+                                                                </span>
+
+                                                            )}
+
+                                                    </div>
+
+                                                </td>
+
+                                                {/* RATING */}
+
+                                                <td className="px-6 py-4">
+
+                                                    <div className="flex items-center gap-1">
+
+                                                        <Star
+                                                            size={
+                                                                15
                                                             }
-                                                            alt={
-                                                                place.name
-                                                            }
-                                                            className="h-12 w-12 rounded-lg object-cover"
+                                                            className="fill-amber-400 text-amber-400"
                                                         />
+
+                                                        <span className="font-medium text-slate-700">
+                                                            {
+                                                                place.rating ??
+                                                                0
+                                                            }
+                                                        </span>
+
+                                                    </div>
+
+                                                </td>
+
+                                                {/* LOCATION */}
+
+                                                <td className="px-6 py-4">
+
+                                                    {place.locationPoint?.coordinates ? (
+
+                                                        <div className="text-xs text-slate-500">
+
+                                                            <div>
+                                                                Lat:{" "}
+                                                                {
+                                                                    place
+                                                                        .locationPoint
+                                                                        .coordinates[1]
+                                                                }
+                                                            </div>
+
+                                                            <div>
+                                                                Lng:{" "}
+                                                                {
+                                                                    place
+                                                                        .locationPoint
+                                                                        .coordinates[0]
+                                                                }
+                                                            </div>
+
+                                                        </div>
 
                                                     ) : (
 
-                                                        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-blue-50">
+                                                        <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
+                                                            No location
+                                                        </span>
 
-                                                            <MapPin
+                                                    )}
+
+                                                </td>
+
+                                                {/* GOOGLE */}
+
+                                                <td className="px-6 py-4">
+
+                                                    {place.googlePlaceId ? (
+
+                                                        <span className="rounded-full bg-green-50 px-2.5 py-1 text-xs font-medium text-green-700">
+                                                            Connected
+                                                        </span>
+
+                                                    ) : (
+
+                                                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
+                                                            Not connected
+                                                        </span>
+
+                                                    )}
+
+                                                </td>
+
+                                                {/* ACTIONS */}
+
+                                                <td className="px-6 py-4">
+
+                                                    <div className="flex justify-end gap-2">
+
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                openEdit(
+                                                                    place
+                                                                )
+                                                            }
+                                                            className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                                                        >
+
+                                                            <Pencil
                                                                 size={
-                                                                    20
+                                                                    17
                                                                 }
-                                                                className="text-blue-600"
                                                             />
 
-                                                        </div>
+                                                        </button>
 
-                                                    )}
-
-                                                    <div>
-
-                                                        <p className="font-semibold text-slate-800">
-                                                            {
-                                                                place.name
+                                                        <button
+                                                            type="button"
+                                                            onClick={() =>
+                                                                deletePlace(
+                                                                    place._id
+                                                                )
                                                             }
-                                                        </p>
+                                                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                                                        >
 
-                                                        <p className="max-w-sm truncate text-xs text-slate-500">
-                                                            {place.location ||
-                                                                place.formattedAddress ||
-                                                                "—"}
-                                                        </p>
+                                                            <Trash2
+                                                                size={
+                                                                    17
+                                                                }
+                                                            />
+
+                                                        </button>
 
                                                     </div>
 
-                                                </div>
+                                                </td>
 
-                                            </td>
-
-                                            {/* CATEGORY */}
-
-                                            <td className="px-6 py-4">
-
-                                                <div className="flex flex-wrap gap-1">
-
-                                                    {place.category?.map(
-                                                        (
-                                                            category
-                                                        ) => (
-
-                                                            <span
-                                                                key={
-                                                                    category
-                                                                }
-                                                                className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700"
-                                                            >
-                                                                {
-                                                                    category
-                                                                }
-                                                            </span>
-
-                                                        )
-                                                    )}
-
-                                                </div>
-
-                                            </td>
-
-                                            {/* RATING */}
-
-                                            <td className="px-6 py-4">
-
-                                                <div className="flex items-center gap-1">
-
-                                                    <Star
-                                                        size={
-                                                            15
-                                                        }
-                                                        className="fill-amber-400 text-amber-400"
-                                                    />
-
-                                                    <span className="font-medium text-slate-700">
-                                                        {
-                                                            place.rating ??
-                                                            0
-                                                        }
-                                                    </span>
-
-                                                </div>
-
-                                            </td>
-
-                                            {/* LOCATION */}
-
-                                            <td className="px-6 py-4">
-
-                                                {place.locationPoint?.coordinates ? (
-
-                                                    <div className="text-xs text-slate-500">
-
-                                                        <div>
-                                                            Lat:{" "}
-                                                            {
-                                                                place
-                                                                    .locationPoint
-                                                                    .coordinates[1]
-                                                            }
-                                                        </div>
-
-                                                        <div>
-                                                            Lng:{" "}
-                                                            {
-                                                                place
-                                                                    .locationPoint
-                                                                    .coordinates[0]
-                                                            }
-                                                        </div>
-
-                                                    </div>
-
-                                                ) : (
-
-                                                    <span className="rounded-full bg-red-50 px-2.5 py-1 text-xs font-medium text-red-600">
-                                                        No location
-                                                    </span>
-
-                                                )}
-
-                                            </td>
-
-                                            {/* ACTIONS */}
-
-                                            <td className="px-6 py-4">
-
-                                                <div className="flex justify-end gap-2">
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            openEdit(
-                                                                place
-                                                            )
-                                                        }
-                                                        className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
-                                                    >
-
-                                                        <Pencil
-                                                            size={
-                                                                17
-                                                            }
-                                                        />
-
-                                                    </button>
-
-                                                    <button
-                                                        type="button"
-                                                        onClick={() =>
-                                                            deletePlace(
-                                                                place._id
-                                                            )
-                                                        }
-                                                        className="rounded-lg p-2 text-red-600 hover:bg-red-50"
-                                                    >
-
-                                                        <Trash2
-                                                            size={
-                                                                17
-                                                            }
-                                                        />
-
-                                                    </button>
-
-                                                </div>
-
-                                            </td>
-
-                                        </tr>
-
-                                    )
+                                            </tr>
+                                        );
+                                    }
                                 )}
 
                             </tbody>
@@ -1180,11 +1352,12 @@ const Places = () => {
                                         <br />
 
                                         Make sure your Google
-                                        API key has the
+                                        API key has the{" "}
+
                                         <strong>
-                                            {" "}
                                             Maps JavaScript API
                                         </strong>{" "}
+
                                         enabled.
 
                                     </div>
@@ -1261,9 +1434,7 @@ const Places = () => {
 
                                 )}
 
-                                {/* =================================
-                                    MAP INSTRUCTIONS
-                                ================================= */}
+                                {/* MAP INSTRUCTIONS */}
 
                                 <div className="mt-3 flex items-start gap-2 rounded-lg bg-white p-3">
 
@@ -1472,6 +1643,32 @@ const Places = () => {
 
                                     </div>
 
+                                    {/* GOOGLE PLACE ID */}
+
+                                    <div className="sm:col-span-2">
+
+                                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
+                                            Google Place ID
+                                        </label>
+
+                                        <input
+                                            name="googlePlaceId"
+                                            value={
+                                                form.googlePlaceId
+                                            }
+                                            onChange={
+                                                handleChange
+                                            }
+                                            placeholder="Google Place ID"
+                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                                        />
+
+                                        <p className="mt-1 text-xs text-slate-400">
+                                            Optional. Used for Google Maps place integration.
+                                        </p>
+
+                                    </div>
+
                                 </div>
 
                             </div>
@@ -1490,26 +1687,114 @@ const Places = () => {
 
                                     {/* CATEGORY */}
 
-                                    <div>
+                                    <div className="sm:col-span-2">
 
-                                        <label className="mb-1.5 block text-sm font-medium text-slate-700">
-                                            Categories
-                                        </label>
+                                        <div className="mb-1.5 flex items-center justify-between">
 
-                                        <input
-                                            name="category"
-                                            value={
-                                                form.category
-                                            }
-                                            onChange={
-                                                handleChange
-                                            }
-                                            placeholder="Nature, Temple, Wildlife"
-                                            className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                                        />
+                                            <label className="block text-sm font-medium text-slate-700">
+                                                Categories
+                                            </label>
+
+                                            {form.category.length >
+                                                0 && (
+
+                                                    <span className="text-xs font-medium text-blue-600">
+
+                                                        {
+                                                            form
+                                                                .category
+                                                                .length
+                                                        }{" "}
+                                                        selected
+
+                                                    </span>
+
+                                                )}
+
+                                        </div>
+
+                                        <div className="rounded-lg border border-slate-300 bg-white p-3">
+
+                                            {categoriesLoading ? (
+
+                                                <p className="py-3 text-sm text-slate-500">
+                                                    Loading categories...
+                                                </p>
+
+                                            ) : activeCategories.length ===
+                                                0 ? (
+
+                                                <div className="py-3">
+
+                                                    <p className="text-sm font-medium text-slate-700">
+                                                        No categories available
+                                                    </p>
+
+                                                    <p className="mt-1 text-xs text-slate-500">
+                                                        Create a category from the Categories section first.
+                                                    </p>
+
+                                                </div>
+
+                                            ) : (
+
+                                                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 md:grid-cols-3">
+
+                                                    {activeCategories.map(
+                                                        (
+                                                            category
+                                                        ) => {
+
+                                                            const checked =
+                                                                form.category.includes(
+                                                                    category._id
+                                                                );
+
+                                                            return (
+
+                                                                <label
+                                                                    key={
+                                                                        category._id
+                                                                    }
+                                                                    className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2.5 transition ${checked
+                                                                        ? "border-blue-300 bg-blue-50"
+                                                                        : "border-slate-200 hover:bg-slate-50"
+                                                                        }`}
+                                                                >
+
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={
+                                                                            checked
+                                                                        }
+                                                                        onChange={() =>
+                                                                            toggleCategory(
+                                                                                category._id
+                                                                            )
+                                                                        }
+                                                                        className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                                    />
+
+                                                                    <span className="text-sm font-medium text-slate-700">
+                                                                        {
+                                                                            category.name
+                                                                        }
+                                                                    </span>
+
+                                                                </label>
+
+                                                            );
+                                                        }
+                                                    )}
+
+                                                </div>
+
+                                            )}
+
+                                        </div>
 
                                         <p className="mt-1 text-xs text-slate-400">
-                                            Separate categories with commas.
+                                            Select one or more categories created from the Categories section.
                                         </p>
 
                                     </div>
@@ -1697,11 +1982,13 @@ const Places = () => {
                                     }
                                     className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
                                 >
+
                                     {saving
                                         ? "Saving..."
                                         : editingId
                                             ? "Update Place"
                                             : "Create Place"}
+
                                 </button>
 
                             </div>

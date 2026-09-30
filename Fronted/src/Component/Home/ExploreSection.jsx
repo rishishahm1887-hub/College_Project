@@ -13,6 +13,34 @@ import {
     CalendarDays,
 } from "lucide-react";
 
+/*
+=========================================================
+CATEGORY HELPERS
+=========================================================
+*/
+
+const getCategoryName = (category) => {
+    if (!category) {
+        return "";
+    }
+
+    if (typeof category === "string") {
+        return category.trim();
+    }
+
+    if (typeof category === "object") {
+        return String(
+            category.name ||
+            category.title ||
+            category.label ||
+            category.slug ||
+            ""
+        ).trim();
+    }
+
+    return "";
+};
+
 
 /*
 =========================================================
@@ -20,18 +48,12 @@ CATEGORY ICONS
 =========================================================
 */
 
-const getCategoryStyle = (
-    category
-) => {
+const getCategoryStyle = (category) => {
     const normalized =
-        String(category)
-            .trim()
+        getCategoryName(category)
             .toLowerCase();
 
-
-    if (
-        normalized === "nature"
-    ) {
+    if (normalized === "nature") {
         return {
             icon: PawPrint,
             iconBg: "bg-emerald-700",
@@ -39,10 +61,7 @@ const getCategoryStyle = (
         };
     }
 
-
-    if (
-        normalized === "wildlife"
-    ) {
+    if (normalized === "wildlife") {
         return {
             icon: Mountain,
             iconBg: "bg-lime-700",
@@ -50,10 +69,7 @@ const getCategoryStyle = (
         };
     }
 
-
-    if (
-        normalized === "culture"
-    ) {
+    if (normalized === "culture") {
         return {
             icon: Landmark,
             iconBg: "bg-amber-500",
@@ -61,10 +77,7 @@ const getCategoryStyle = (
         };
     }
 
-
-    if (
-        normalized === "food"
-    ) {
+    if (normalized === "food") {
         return {
             icon: Utensils,
             iconBg: "bg-red-500",
@@ -72,9 +85,9 @@ const getCategoryStyle = (
         };
     }
 
-
     if (
-        normalized === "homestays"
+        normalized === "homestays" ||
+        normalized === "homestay"
     ) {
         return {
             icon: House,
@@ -83,17 +96,13 @@ const getCategoryStyle = (
         };
     }
 
-
-    if (
-        normalized === "events"
-    ) {
+    if (normalized === "events") {
         return {
             icon: CalendarDays,
             iconBg: "bg-purple-600",
             arrow: "text-purple-600",
         };
     }
-
 
     return {
         icon: Compass,
@@ -109,14 +118,12 @@ CATEGORY SUBTITLE
 =========================================================
 */
 
-const getCategorySubtitle =
-    (category, count) => {
-        return `${count} ${
-            count === 1
-                ? "destination"
-                : "destinations"
+const getCategorySubtitle = (category, count) => {
+    return `${count} ${count === 1
+            ? "destination"
+            : "destinations"
         }`;
-    };
+};
 
 
 /*
@@ -141,120 +148,90 @@ const ExploreSection = ({
     =====================================================
     */
 
-    const categoryMap =
-        new Map();
+    const categoryMap = new Map();
 
+    places.forEach((place) => {
+        const rawCategory = place?.category;
 
-    places.forEach(
-        (place) => {
-            const categories =
-                Array.isArray(
-                    place.category
-                )
-                    ? place.category
-                    : typeof place.category ===
-                        "string"
-                        ? place.category
-                            .split(",")
-                            .map(
-                                (item) =>
-                                    item.trim()
-                            )
-                            .filter(Boolean)
-                        : [];
+        const categories = Array.isArray(rawCategory)
+            ? rawCategory
+            : rawCategory
+                ? [rawCategory]
+                : [];
 
+        categories.forEach((category) => {
+            const cleanCategory =
+                getCategoryName(category);
 
-            categories.forEach(
-                (category) => {
-                    const cleanCategory =
-                        String(category)
-                            .trim();
+            if (!cleanCategory) {
+                return;
+            }
 
+            const key =
+                cleanCategory.toLowerCase();
 
-                    if (
-                        !cleanCategory
-                    ) {
-                        return;
+            if (!categoryMap.has(key)) {
+                categoryMap.set(
+                    key,
+                    {
+                        title: cleanCategory,
+                        places: [],
                     }
+                );
+            }
+
+            categoryMap
+                .get(key)
+                .places
+                .push(place);
+        });
+    });
 
 
-                    const key =
-                        cleanCategory
-                            .toLowerCase();
-
-
-                    if (
-                        !categoryMap.has(
-                            key
-                        )
-                    ) {
-                        categoryMap.set(
-                            key,
-                            {
-                                title:
-                                    cleanCategory,
-                                places: [],
-                            }
-                        );
-                    }
-
-
-                    categoryMap
-                        .get(key)
-                        .places
-                        .push(place);
-                }
-            );
-        }
-    );
-
+    /*
+    =====================================================
+    CATEGORY LIST
+    =====================================================
+    */
 
     const categories =
         Array.from(
             categoryMap.values()
-        ).map(
-            (item) => {
-                const style =
-                    getCategoryStyle(
-                        item.title
-                    );
+        ).map((item) => {
+            const style =
+                getCategoryStyle(
+                    item.title
+                );
 
+            const representativePlace =
+                item.places.find(
+                    (place) =>
+                        place?.image
+                ) ||
+                item.places[0];
 
-                const representativePlace =
-                    item.places.find(
-                        (place) =>
-                            place.image
-                    ) ||
-                    item.places[0];
+            return {
+                title: item.title,
 
-
-                return {
-                    title:
+                subtitle:
+                    getCategorySubtitle(
                         item.title,
+                        item.places.length
+                    ),
 
-                    subtitle:
-                        getCategorySubtitle(
-                            item.title,
-                            item.places
-                                .length
-                        ),
+                image:
+                    representativePlace?.image ||
+                    "",
 
-                    image:
-                        representativePlace
-                            ?.image ||
-                        "",
+                icon: style.icon,
 
-                    icon:
-                        style.icon,
+                iconBg:
+                    style.iconBg,
 
-                    iconBg:
-                        style.iconBg,
-
-                    arrow:
-                        style.arrow,
-                };
-            }
-        );
+                arrow:
+                    style.arrow,
+            };
+        });
 
 
     /*
@@ -280,18 +257,15 @@ const ExploreSection = ({
                             <Compass size={22} />
                         </div>
 
-
                         <div>
 
                             <p className="mb-1 text-xs font-bold uppercase tracking-[0.15em] text-emerald-700">
                                 Explore your interests
                             </p>
 
-
                             <h2 className="text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">
                                 What are you looking for?
                             </h2>
-
 
                             <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-500 sm:text-base">
                                 Explore the best of Bharatpur —
@@ -333,7 +307,6 @@ const ExploreSection = ({
                                     const Icon =
                                         item.icon;
 
-
                                     return (
                                         <button
                                             key={
@@ -351,6 +324,7 @@ const ExploreSection = ({
                                             <div className="relative h-33.75 overflow-hidden">
 
                                                 {item.image ? (
+
                                                     <img
                                                         src={
                                                             item.image
@@ -361,13 +335,14 @@ const ExploreSection = ({
                                                         loading="lazy"
                                                         className="h-full w-full object-cover transition-transform duration-700 ease-out group-hover:scale-105"
                                                     />
+
                                                 ) : (
+
                                                     <div className="h-full w-full bg-linear-to-br from-emerald-100 via-white to-amber-50" />
+
                                                 )}
 
-
                                                 <div className="absolute inset-0 bg-linear-to-t from-black/45 via-transparent to-transparent" />
-
 
                                                 <div className="absolute bottom-3 left-3">
 
@@ -403,16 +378,11 @@ const ExploreSection = ({
                                                 <div className="min-w-0 flex-1">
 
                                                     <h3 className="font-bold text-slate-800">
-                                                        {
-                                                            item.title
-                                                        }
+                                                        {item.title}
                                                     </h3>
 
-
                                                     <p className="mt-0.5 truncate text-xs text-slate-500">
-                                                        {
-                                                            item.subtitle
-                                                        }
+                                                        {item.subtitle}
                                                     </p>
 
                                                 </div>
@@ -461,7 +431,6 @@ const ExploreSection = ({
                                         Inspiration
                                     </p>
 
-
                                     <h2 className="text-2xl font-black tracking-tight text-slate-900">
                                         Popular right now
                                     </h2>
@@ -496,9 +465,9 @@ const ExploreSection = ({
 
                                         <button
                                             key={
-                                                place._id ||
-                                                place.slug ||
-                                                place.name
+                                                place?._id ||
+                                                place?.slug ||
+                                                `${place?.name || "place"}-${index}`
                                             }
                                             type="button"
                                             onClick={() => {
@@ -526,28 +495,32 @@ const ExploreSection = ({
                                                 text-left
                                                 transition-all
                                                 duration-300
-                                                ${
-                                                    activeSlide ===
+                                                ${activeSlide ===
                                                     index
-                                                        ? "border-emerald-200 bg-emerald-50/70"
-                                                        : "border-slate-100 bg-slate-50/50 hover:border-emerald-100 hover:bg-emerald-50/40"
+                                                    ? "border-emerald-200 bg-emerald-50/70"
+                                                    : "border-slate-100 bg-slate-50/50 hover:border-emerald-100 hover:bg-emerald-50/40"
                                                 }
                                             `}
                                         >
 
-                                            {place.image ? (
+                                            {place?.image ? (
+
                                                 <img
                                                     src={
                                                         place.image
                                                     }
                                                     alt={
-                                                        place.name
+                                                        place.name ||
+                                                        "Destination"
                                                     }
                                                     className="h-16 w-20 shrink-0 rounded-xl object-cover"
                                                     loading="lazy"
                                                 />
+
                                             ) : (
+
                                                 <div className="h-16 w-20 shrink-0 rounded-xl bg-linear-to-br from-emerald-100 to-amber-50" />
+
                                             )}
 
 
@@ -555,7 +528,8 @@ const ExploreSection = ({
 
                                                 <h3 className="truncate text-sm font-bold text-slate-800">
                                                     {
-                                                        place.name
+                                                        place?.name ||
+                                                        "Unnamed destination"
                                                     }
                                                 </h3>
 
@@ -566,8 +540,8 @@ const ExploreSection = ({
 
                                                     <span className="truncate">
                                                         {
-                                                            place.location ||
-                                                            place.formattedAddress ||
+                                                            place?.location ||
+                                                            place?.formattedAddress ||
                                                             "Bharatpur"
                                                         }
                                                     </span>
@@ -582,26 +556,25 @@ const ExploreSection = ({
                                                         className="fill-amber-400 text-amber-400"
                                                     />
 
-
                                                     <span className="font-semibold text-slate-600">
+
                                                         {
                                                             Number(
-                                                                place.rating
+                                                                place?.rating
                                                             ) > 0
                                                                 ? Number(
                                                                     place.rating
-                                                                ).toFixed(
-                                                                    1
-                                                                )
+                                                                ).toFixed(1)
                                                                 : "New"
                                                         }
+
                                                     </span>
 
 
                                                     <span className="text-slate-400">
                                                         (
                                                         {
-                                                            place.reviews ??
+                                                            place?.reviews ??
                                                             0
                                                         }
                                                         )

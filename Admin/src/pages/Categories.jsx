@@ -13,25 +13,40 @@ import { apiRequest } from "../lib/api";
 const Categories = () => {
     const { getToken } = useAuth();
 
-    const [categories, setCategories] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [modal, setModal] = useState(false);
-    const [editing, setEditing] = useState(null);
-    const [name, setName] = useState("");
-    const [saving, setSaving] = useState(false);
+    const [categories, setCategories] =
+        useState([]);
+
+    const [loading, setLoading] =
+        useState(true);
+
+    const [modal, setModal] =
+        useState(false);
+
+    const [editing, setEditing] =
+        useState(null);
+
+    const [name, setName] =
+        useState("");
+
+    const [saving, setSaving] =
+        useState(false);
 
     const loadCategories = async () => {
         try {
             setLoading(true);
 
-            const data = await apiRequest(
-                "/admin/categories",
-                {},
-                getToken
-            );
+            const data =
+                await apiRequest(
+                    "/admin/categories",
+                    {},
+                    getToken
+                );
 
-            setCategories(data.categories || []);
+            setCategories(
+                data.categories || []
+            );
         } catch (error) {
+            console.error(error);
             alert(error.message);
         } finally {
             setLoading(false);
@@ -49,15 +64,23 @@ const Categories = () => {
     };
 
     const openEdit = (category) => {
-        setEditing(category.name);
-        setName(category.name);
+        setEditing(category);
+        setName(
+            category.name || ""
+        );
         setModal(true);
     };
 
     const save = async (e) => {
         e.preventDefault();
 
-        if (!name.trim()) {
+        const trimmedName =
+            name.trim();
+
+        if (!trimmedName) {
+            alert(
+                "Category name is required."
+            );
             return;
         }
 
@@ -66,13 +89,11 @@ const Categories = () => {
 
             if (editing) {
                 await apiRequest(
-                    `/admin/categories/${encodeURIComponent(
-                        editing
-                    )}`,
+                    `/admin/categories/${editing._id}`,
                     {
                         method: "PATCH",
                         body: JSON.stringify({
-                            name: name.trim(),
+                            name: trimmedName,
                         }),
                     },
                     getToken
@@ -83,7 +104,7 @@ const Categories = () => {
                     {
                         method: "POST",
                         body: JSON.stringify({
-                            name: name.trim(),
+                            name: trimmedName,
                         }),
                     },
                     getToken
@@ -91,28 +112,33 @@ const Categories = () => {
             }
 
             setModal(false);
+            setEditing(null);
+            setName("");
+
             await loadCategories();
         } catch (error) {
+            console.error(error);
             alert(error.message);
         } finally {
             setSaving(false);
         }
     };
 
-    const remove = async (category) => {
-        if (
-            !window.confirm(
-                `Remove "${category.name}" from all places?`
-            )
-        ) {
+    const remove = async (
+        category
+    ) => {
+        const confirmed =
+            window.confirm(
+                `Delete "${category.name}"? This will remove this category from all places.`
+            );
+
+        if (!confirmed) {
             return;
         }
 
         try {
             await apiRequest(
-                `/admin/categories/${encodeURIComponent(
-                    category.name
-                )}`,
+                `/admin/categories/${category._id}`,
                 {
                     method: "DELETE",
                 },
@@ -121,6 +147,7 @@ const Categories = () => {
 
             await loadCategories();
         } catch (error) {
+            console.error(error);
             alert(error.message);
         }
     };
@@ -134,13 +161,13 @@ const Categories = () => {
                     </h2>
 
                     <p className="mt-1 text-sm text-slate-500">
-                        Manage place categories
+                        Manage categories used by tourism places
                     </p>
                 </div>
 
                 <button
                     onClick={openCreate}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+                    className="inline-flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
                 >
                     <Plus size={18} />
                     Add Category
@@ -163,60 +190,80 @@ const Categories = () => {
                     </p>
 
                     <p className="mt-1 text-sm text-slate-500">
-                        Categories appear when they are assigned
-                        to places.
+                        Add your first category.
                     </p>
                 </div>
             ) : (
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {categories.map((category) => (
-                        <div
-                            key={category.name}
-                            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-                        >
-                            <div className="flex items-start justify-between">
-                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
-                                    <Tags
-                                        size={21}
-                                        className="text-blue-600"
-                                    />
+                    {categories.map(
+                        (category) => (
+                            <div
+                                key={
+                                    category._id
+                                }
+                                className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                            >
+                                <div className="flex items-start justify-between">
+                                    <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50">
+                                        <Tags
+                                            size={
+                                                21
+                                            }
+                                            className="text-blue-600"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-1">
+                                        <button
+                                            onClick={() =>
+                                                openEdit(
+                                                    category
+                                                )
+                                            }
+                                            className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
+                                        >
+                                            <Pencil
+                                                size={
+                                                    16
+                                                }
+                                            />
+                                        </button>
+
+                                        <button
+                                            onClick={() =>
+                                                remove(
+                                                    category
+                                                )
+                                            }
+                                            className="rounded-lg p-2 text-red-600 hover:bg-red-50"
+                                        >
+                                            <Trash2
+                                                size={
+                                                    16
+                                                }
+                                            />
+                                        </button>
+                                    </div>
                                 </div>
 
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() =>
-                                            openEdit(
-                                                category
-                                            )
-                                        }
-                                        className="rounded-lg p-2 text-blue-600 hover:bg-blue-50"
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
+                                <h3 className="mt-5 text-lg font-semibold text-slate-800">
+                                    {
+                                        category.name
+                                    }
+                                </h3>
 
-                                    <button
-                                        onClick={() =>
-                                            remove(category)
-                                        }
-                                        className="rounded-lg p-2 text-red-600 hover:bg-red-50"
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </div>
+                                <p className="mt-1 text-sm text-slate-500">
+                                    {
+                                        category.placeCount
+                                    }{" "}
+                                    {category.placeCount ===
+                                        1
+                                        ? "place"
+                                        : "places"}
+                                </p>
                             </div>
-
-                            <h3 className="mt-5 text-lg font-semibold text-slate-800">
-                                {category.name}
-                            </h3>
-
-                            <p className="mt-1 text-sm text-slate-500">
-                                {category.placeCount}{" "}
-                                {category.placeCount === 1
-                                    ? "place"
-                                    : "places"}
-                            </p>
-                        </div>
-                    ))}
+                        )
+                    )}
                 </div>
             )}
 
@@ -231,15 +278,25 @@ const Categories = () => {
                             </h3>
 
                             <button
-                                onClick={() => setModal(false)}
+                                onClick={() =>
+                                    setModal(
+                                        false
+                                    )
+                                }
                                 className="rounded-lg p-2 hover:bg-slate-100"
                             >
-                                <X size={19} />
+                                <X
+                                    size={
+                                        19
+                                    }
+                                />
                             </button>
                         </div>
 
                         <form
-                            onSubmit={save}
+                            onSubmit={
+                                save
+                            }
                             className="space-y-5 p-6"
                         >
                             <div>
@@ -248,10 +305,16 @@ const Categories = () => {
                                 </label>
 
                                 <input
-                                    value={name}
-                                    onChange={(e) =>
+                                    value={
+                                        name
+                                    }
+                                    onChange={(
+                                        e
+                                    ) =>
                                         setName(
-                                            e.target.value
+                                            e
+                                                .target
+                                                .value
                                         )
                                     }
                                     placeholder="Nature"
@@ -264,7 +327,9 @@ const Categories = () => {
                                 <button
                                     type="button"
                                     onClick={() =>
-                                        setModal(false)
+                                        setModal(
+                                            false
+                                        )
                                     }
                                     className="rounded-lg border border-slate-300 px-4 py-2.5 text-sm"
                                 >
@@ -272,7 +337,9 @@ const Categories = () => {
                                 </button>
 
                                 <button
-                                    disabled={saving}
+                                    disabled={
+                                        saving
+                                    }
                                     className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
                                 >
                                     {saving
