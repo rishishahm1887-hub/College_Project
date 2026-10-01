@@ -1,5 +1,4 @@
 import { clerkClient } from "@clerk/express";
-
 import Place from "../../models/Place.js";
 import Trip from "../../models/Trip.js";
 import GeneratedTrip from "../../models/GeneratedTrip.js";
@@ -7,12 +6,6 @@ import TripReview from "../../models/TripReview.js";
 
 export const getDashboard = async (req, res) => {
     try {
-        /*
-        ========================================
-        USERS
-        ========================================
-        */
-
         const usersResult =
             await clerkClient.users.getUserList({
                 limit: 1,
@@ -21,13 +14,6 @@ export const getDashboard = async (req, res) => {
 
         const totalUsers =
             usersResult.totalCount || 0;
-
-
-        /*
-        ========================================
-        MONGODB COUNTS
-        ========================================
-        */
 
         const [
             totalPlaces,
@@ -43,19 +29,6 @@ export const getDashboard = async (req, res) => {
 
             TripReview.countDocuments(),
         ]);
-
-
-        /*
-        ========================================
-        CATEGORIES
-        ========================================
-        
-        Your current Place model stores
-        categories as an array.
-
-        So we calculate unique categories
-        directly from Place documents.
-        */
 
         const categoryResult =
             await Place.aggregate([
@@ -84,13 +57,6 @@ export const getDashboard = async (req, res) => {
 
         const totalCategories =
             categoryResult[0]?.total || 0;
-
-
-        /*
-        ========================================
-        RECENT USERS
-        ========================================
-        */
 
         const recentUsersResult =
             await clerkClient.users.getUserList({
@@ -138,12 +104,6 @@ export const getDashboard = async (req, res) => {
             );
 
 
-        /*
-        ========================================
-        RECENT PLACES
-        ========================================
-        */
-
         const recentPlaces =
             await Place.find()
                 .sort({
@@ -154,13 +114,6 @@ export const getDashboard = async (req, res) => {
                     "name slug image category rating createdAt"
                 )
                 .lean();
-
-
-        /*
-        ========================================
-        RECENT TRIPS
-        ========================================
-        */
 
         const recentTrips =
             await Trip.find()
@@ -174,13 +127,6 @@ export const getDashboard = async (req, res) => {
                 )
                 .lean();
 
-
-        /*
-        ========================================
-        RECENT GENERATED TRIPS
-        ========================================
-        */
-
         const recentGeneratedTrips =
             await GeneratedTrip.find()
                 .sort({
@@ -189,12 +135,6 @@ export const getDashboard = async (req, res) => {
                 .limit(5)
                 .lean();
 
-
-        /*
-        ========================================
-        RECENT REVIEWS
-        ========================================
-        */
 
         const recentReviews =
             await TripReview.find()
@@ -207,13 +147,6 @@ export const getDashboard = async (req, res) => {
                     "createdAt"
                 )
                 .lean();
-
-
-        /*
-        ========================================
-        RESPONSE
-        ========================================
-        */
 
         return res.json({
             success: true,

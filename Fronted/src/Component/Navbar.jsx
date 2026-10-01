@@ -11,8 +11,6 @@ import {
     Sparkles,
     Bookmark,
     Star,
-    Globe,
-    ChevronDown,
 } from "lucide-react";
 
 const Navbar = () => {
@@ -60,34 +58,26 @@ const Navbar = () => {
 
     return (
         <header className="sticky top-0 z-50 w-full border-b border-slate-100 bg-white/95 shadow-sm backdrop-blur">
-            {/* ================= DESKTOP / TOP BAR ================= */}
-
             <div className="mx-auto flex h-18 max-w-375 items-center justify-between px-5 lg:px-10">
-                {/* ================= LOGO ================= */}
-
                 <Link to="/" className="flex items-center gap-3">
                     <div className="relative flex h-15 w-15 items-center justify-center">
                         <img src={logo} alt="Bharatpur AI Logo" className="h-15 w-15 rounded-full object-cover" />
                     </div>
-
                     <div>
                         <h1 className="text-[22px] font-extrabold leading-none tracking-tight text-slate-800 sm:text-[24px]">
                             Bharatpur Sathii
                         </h1>
-
                         <p className="mt-1 text-[8px] font-bold tracking-[0.22em] text-slate-500 sm:text-[9px]">
                             YOUR TOURISM GUIDE
                         </p>
                     </div>
                 </Link>
 
-                {/* ================= DESKTOP NAVIGATION ================= */}
 
                 <nav className="hidden items-center gap-3 xl:flex">
                     {navItems.map((item) => {
                         const Icon = item.icon;
                         const isActive = location.pathname === item.path;
-
                         return (
                             <Link
                                 key={item.path}
@@ -105,15 +95,9 @@ const Navbar = () => {
                     })}
                 </nav>
 
-                {/* ================= RIGHT SIDE ================= */}
 
                 <div className="hidden items-center gap-3 md:flex">
-                    {/* ================= LANGUAGE ================= */}
-
                     <div className="relative"></div>
-
-                    {/* ================= CLERK USER ================= */}
-
                     {user ? (
                         <UserButton
                             appearance={{
@@ -132,7 +116,6 @@ const Navbar = () => {
                     )}
                 </div>
 
-                {/* ================= MOBILE BUTTON ================= */}
 
                 <button
                     onClick={() => setMobileMenu(!mobileMenu)}
@@ -142,8 +125,6 @@ const Navbar = () => {
                     {mobileMenu ? <X size={27} /> : <Menu size={27} />}
                 </button>
             </div>
-
-            {/* ================= MOBILE MENU ================= */}
 
             {mobileMenu && (
                 <div className="border-t border-slate-100 bg-white px-5 pb-5 xl:hidden">
@@ -166,12 +147,7 @@ const Navbar = () => {
                         })}
                     </nav>
 
-                    {/* ================= MOBILE CONTROLS ================= */}
-
                     <div className="mt-3 flex gap-3 border-t border-slate-100 pt-4">
-
-                        {/* Clerk */}
-
                         {user ? (
                             <div className="flex items-center justify-center px-2">
                                 <UserButton />

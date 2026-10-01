@@ -1,425 +1,337 @@
-const API_URL =
-  import.meta.env.VITE_API_URL ||
-  "http://localhost:5000/api";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
+export const getPlaces = async () => {
+  const response = await fetch(`${API_URL}/places`, {
+    method: "GET",
+  });
 
-/*
-=========================================================
-API REQUEST
-=========================================================
-*/
-
-const apiRequest = async (
-  endpoint,
-  options = {}
-) => {
-  const response =
-    await fetch(
-      `${API_URL}${endpoint}`,
-      {
-        ...options,
-
-        headers: {
-          ...(options.body
-            ? {
-              "Content-Type":
-                "application/json",
-            }
-            : {}),
-
-          ...(options.headers || {}),
-        },
-      }
-    );
-
-
-  let data = null;
-
-
-  try {
-    data =
-      await response.json();
-  } catch {
-    data = null;
-  }
-
+  const data = await response.json();
 
   if (!response.ok) {
     throw new Error(
       data?.message ||
       data?.error ||
-      `Request failed with status ${response.status}`
+      `Request failed with status ${response.status}`,
     );
   }
-
 
   return data;
 };
 
+export const resolvePlace = async (name, token) => {
+  const response = await fetch(`${API_URL}/places/resolve`, {
+    method: "POST",
 
-/*
-=========================================================
-PUBLIC PLACES
-=========================================================
-*/
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
 
-export const getPlaces =
-  async () => {
-    return apiRequest(
-      "/places",
-      {
-        method: "GET",
-      }
+    body: JSON.stringify({
+      name: name,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
     );
+  }
+
+  return data;
+};
+
+export const addMyTrip = async (placeId, token) => {
+  const response = await fetch(`${API_URL}/trips`, {
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+
+    body: JSON.stringify({
+      placeId: placeId,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const getMyTrips = async (token) => {
+  const response = await fetch(`${API_URL}/trips`, {
+    method: "GET",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const removeMyTrip = async (placeId, token) => {
+  if (!placeId) {
+    throw new Error("Place ID is required.");
+  }
+
+  const response = await fetch(`${API_URL}/trips/${placeId}`, {
+    method: "DELETE",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const clearMyTrips = async (token) => {
+  const response = await fetch(`${API_URL}/trips`, {
+    method: "DELETE",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const generateMyTrip = async (tripData, token) => {
+  const response = await fetch(`${API_URL}/planner/generate`, {
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+
+    body: JSON.stringify(tripData),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const getGeneratedTrips = async (token) => {
+  const response = await fetch(`${API_URL}/planner/history`, {
+    method: "GET",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const getGeneratedTrip = async (tripId, token) => {
+  const response = await fetch(`${API_URL}/planner/${tripId}`, {
+    method: "GET",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const getTripReviews = async (token) => {
+  const response = await fetch(`${API_URL}/reviews`, {
+    method: "GET",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const getPublicTripReviews = async () => {
+  const response = await fetch(`${API_URL}/reviews/public`, {
+    method: "GET",
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const submitTripReview = async (tripId, rating, review, token) => {
+  const response = await fetch(`${API_URL}/reviews`, {
+    method: "POST",
+
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+
+    body: JSON.stringify({
+      tripId: tripId,
+      rating: rating,
+      review: review,
+    }),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const deleteTripReview = async (tripId, token) => {
+  const response = await fetch(`${API_URL}/reviews/${tripId}`, {
+    method: "DELETE",
+
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
+    );
+  }
+
+  return data;
+};
+
+export const sendAIChat = async (message, history = [], token = null) => {
+  const headers = {
+    "Content-Type": "application/json",
   };
 
+  // Add Authorization header only when the user has a token
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
 
-/*
-=========================================================
-RESOLVE PLACE
-=========================================================
-*/
+  const response = await fetch(`${API_URL}/ai/chat`, {
+    method: "POST",
 
-export const resolvePlace =
-  async (
-    name,
-    token
-  ) => {
-    return apiRequest(
-      "/places/resolve",
-      {
-        method: "POST",
+    headers: headers,
 
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
+    body: JSON.stringify({
+      message: message,
+      history: history,
+    }),
+  });
 
-        body: JSON.stringify({
-          name,
-        }),
-      }
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message ||
+      data?.error ||
+      `Request failed with status ${response.status}`,
     );
-  };
+  }
 
-
-/*
-=========================================================
-ADD TO MY TRIP
-=========================================================
-*/
-
-export const addMyTrip =
-  async (
-    placeId,
-    token
-  ) => {
-    return apiRequest(
-      "/trips",
-      {
-        method: "POST",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-
-        body: JSON.stringify({
-          placeId,
-        }),
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GET MY TRIPS
-=========================================================
-*/
-
-export const getMyTrips =
-  async (
-    token
-  ) => {
-    return apiRequest(
-      "/trips",
-      {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-REMOVE MY TRIP
-=========================================================
-*/
-
-export const removeMyTrip =
-  async (
-    placeId,
-    token
-  ) => {
-    if (!placeId) {
-      throw new Error(
-        "Place ID is required."
-      );
-    }
-
-    return apiRequest(
-      `/trips/${placeId}`,
-      {
-        method: "DELETE",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-CLEAR MY TRIPS
-=========================================================
-*/
-
-export const clearMyTrips =
-  async (
-    token
-  ) => {
-    return apiRequest(
-      "/trips",
-      {
-        method: "DELETE",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GENERATE MY TRIP
-=========================================================
-*/
-
-export const generateMyTrip =
-  async (
-    tripData,
-    token
-  ) => {
-    return apiRequest(
-      "/planner/generate",
-      {
-        method: "POST",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-
-        body: JSON.stringify(
-          tripData
-        ),
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GET GENERATED TRIPS
-=========================================================
-*/
-
-export const getGeneratedTrips =
-  async (
-    token
-  ) => {
-    return apiRequest(
-      "/planner/history",
-      {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GET SINGLE GENERATED TRIP
-=========================================================
-*/
-
-export const getGeneratedTrip =
-  async (
-    tripId,
-    token
-  ) => {
-    return apiRequest(
-      `/planner/${tripId}`,
-      {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GET MY REVIEWS
-=========================================================
-*/
-
-export const getTripReviews =
-  async (
-    token
-  ) => {
-    return apiRequest(
-      "/reviews",
-      {
-        method: "GET",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-GET PUBLIC REVIEWS
-=========================================================
-*/
-
-export const getPublicTripReviews =
-  async () => {
-    return apiRequest(
-      "/reviews/public",
-      {
-        method: "GET",
-      }
-    );
-  };
-
-
-/*
-=========================================================
-SUBMIT REVIEW
-=========================================================
-*/
-
-export const submitTripReview =
-  async (
-    tripId,
-    rating,
-    review,
-    token
-  ) => {
-    return apiRequest(
-      "/reviews",
-      {
-        method: "POST",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-
-        body: JSON.stringify({
-          tripId,
-          rating,
-          review,
-        }),
-      }
-    );
-  };
-
-
-/*
-=========================================================
-DELETE REVIEW
-=========================================================
-*/
-
-export const deleteTripReview =
-  async (
-    tripId,
-    token
-  ) => {
-    return apiRequest(
-      `/reviews/${tripId}`,
-      {
-        method: "DELETE",
-
-        headers: {
-          Authorization:
-            `Bearer ${token}`,
-        },
-      }
-    );
-  };
-
-
-/*
-=========================================================
-AI CHAT
-=========================================================
-*/
-
-export const sendAIChat =
-  async (
-    message,
-    history = [],
-    token = null
-  ) => {
-    const headers = {};
-
-
-    if (token) {
-      headers.Authorization =
-        `Bearer ${token}`;
-    }
-
-
-    return apiRequest(
-      "/ai/chat",
-      {
-        method: "POST",
-
-        headers,
-
-        body: JSON.stringify({
-          message,
-          history,
-        }),
-      }
-    );
-  };
+  return data;
+};

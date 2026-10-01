@@ -9,7 +9,6 @@ import Navbar from "./Component/Navbar";
 import Planmytrip from "./Pages/Planmytrip";
 import Aiguides from "./Pages/Aiguides";
 import Mytrip from "./Pages/Mytrip";
-import About from "./Pages/About";
 import Placemap from "./Pages/Placemap";
 import Review from "./Pages/Review";
 
@@ -51,23 +50,14 @@ const App = () => (
         element={<Placemap />}
       />
 
-      {/* Review all generated trips */}
-
-      <Route
+      {/* <Route
         path="/review"
         element={<Review />}
-      />
-
-      {/* Review one specific generated trip */}
+      /> */}
 
       <Route
         path="/review/:tripId"
         element={<Review />}
-      />
-
-      <Route
-        path="/about"
-        element={<About />}
       />
 
     </Routes>

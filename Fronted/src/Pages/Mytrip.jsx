@@ -15,14 +15,6 @@ import {
     clearMyTrips,
 } from "../lib/api";
 
-/*
-|--------------------------------------------------------------------------
-| ICONS
-|--------------------------------------------------------------------------
-| Lightweight inline SVG icons so the page does not need another package.
-|--------------------------------------------------------------------------
-*/
-
 const MapPinIcon = ({ className = "h-5 w-5" }) => (
     <svg
         viewBox="0 0 24 24"

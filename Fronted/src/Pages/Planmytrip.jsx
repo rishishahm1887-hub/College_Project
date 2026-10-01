@@ -3,9 +3,6 @@ import { useAuth } from "@clerk/react";
 import { useNavigate } from "react-router-dom";
 import { generateMyTrip } from "../lib/api";
 
-/* =========================================================
-   ICONS
-========================================================= */
 
 const ChevronDown = ({ className = "h-4 w-4" }) => (
   <svg
